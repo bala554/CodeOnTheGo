@@ -10,7 +10,7 @@ import java.net.URL
 
 /** Minimal non-streaming OpenCode HTTP client. The server's /doc schema is authoritative. */
 class OpenCodeHttpClient(
-	private val baseUrl: String = DEFAULT_BASE_URL,
+	private val baseUrl: String = OpenCodeChatConfig.BASE_URL,
 	private val connectTimeoutMs: Int = DEFAULT_TIMEOUT_MS,
 	private val readTimeoutMs: Int = DEFAULT_TIMEOUT_MS,
 	private val gson: Gson = Gson(),
@@ -66,16 +66,16 @@ class OpenCodeHttpClient(
 		return sequenceOf("text", "content", "message", "response")
 			.mapNotNull { objectJson.stringOrNull(it) }
 			.firstOrNull()
-			?: objectJson.getAsJsonArray("parts")?.joinToString("") { part ->
-				part.asJsonObject.stringOrNull("text").orEmpty()
-			}.orEmpty().ifBlank { payload }
+			?: objectJson.getAsJsonArray("parts")
+				?.joinToString("") { part -> part.asJsonObject.stringOrNull("text").orEmpty() }
+				.orEmpty()
+				.ifBlank { payload }
 	}
 
 	private fun JsonObject.stringOrNull(name: String): String? =
 		get(name)?.takeUnless { it.isJsonNull }?.takeIf { it.isJsonPrimitive }?.asString
 
 	companion object {
-		const val DEFAULT_BASE_URL = "http://127.0.0.1:4096"
 		const val DEFAULT_TIMEOUT_MS = 30_000
 	}
 }

@@ -1,6 +1,5 @@
 package com.itsaky.androidide.opencode
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +28,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,20 +35,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun OpenCodeChatScreen(
-	viewModel: OpenCodeChatViewModel = viewModel(),
+	viewModel: OpenCodeChatViewModel,
 ) {
 	val state by viewModel.uiState.collectAsState()
 	var draft by remember { mutableStateOf("") }
 	val clipboardManager = LocalClipboardManager.current
+	val isBusy = (state as? OpenCodeChatUiState.Ready)?.waitingForResponse == true
 
 	Column(modifier = Modifier.fillMaxSize()) {
 		Row(
@@ -58,15 +55,8 @@ fun OpenCodeChatScreen(
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.SpaceBetween,
 		) {
-			Text(
-				text = "OpenCode Agent",
-				size = 18.sp,
-			)
-			Button(
-				onClick = { viewModel.clearChat() },
-			) {
-				Text("Clear")
-			}
+			Text(text = "OpenCode Agent", fontSize = 18.sp)
+			Button(onClick = { viewModel.clearChat() }) { Text("Clear") }
 		}
 
 		Divider()
@@ -79,17 +69,16 @@ fun OpenCodeChatScreen(
 					items(ui.messages) { message ->
 						OpenCodeChatBubble(
 							message = message,
-							onCopy = {
-								clipboardManager.setText(AnnotatedString(message.content))
-							},
-							onEdit = {
-								draft = message.content
-							},
+							onCopy = { clipboardManager.setText(AnnotatedString(message.content)) },
+							onEdit = { draft = message.content },
 						)
 					}
 					if (ui.waitingForResponse) {
 						item {
-							Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+							Box(
+								modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+								contentAlignment = Alignment.Center,
+							) {
 								CircularProgressIndicator()
 							}
 						}
@@ -129,7 +118,7 @@ fun OpenCodeChatScreen(
 						draft = ""
 					}
 				},
-				enabled = draft.isNotBlank() && state !is OpenCodeChatUiState.Ready || (state as? OpenCodeChatUiState.Ready)?.waitingForResponse != true,
+				enabled = draft.isNotBlank() && !isBusy,
 			) {
 				Icon(Icons.Filled.Send, contentDescription = "Send message")
 			}
@@ -161,10 +150,7 @@ private fun OpenCodeChatBubble(
 					style = MaterialTheme.typography.labelSmall,
 					color = textColor.copy(alpha = 0.8f),
 				)
-				Text(
-					text = message.content,
-					color = textColor,
-				)
+				Text(text = message.content, color = textColor)
 				if (!message.isUser) {
 					Row(
 						modifier = Modifier.fillMaxWidth(),

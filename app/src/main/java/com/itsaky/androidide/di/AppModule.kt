@@ -5,6 +5,10 @@ import com.itsaky.androidide.analytics.AnalyticsManager
 import com.itsaky.androidide.analytics.IAnalyticsManager
 import com.itsaky.androidide.deeplink.PendingDeepLinkOpen
 import com.itsaky.androidide.git.core.GitCredentialsManager
+import com.itsaky.androidide.opencode.OpenCodeChatRepository
+import com.itsaky.androidide.opencode.OpenCodeChatViewModel
+import com.itsaky.androidide.opencode.OpenCodeClient
+import com.itsaky.androidide.opencode.OpenCodeHttpClient
 import com.itsaky.androidide.repositories.RecentProjectRepository
 import com.itsaky.androidide.repositories.RecentProjectRepositoryImpl
 import com.itsaky.androidide.roomData.recentproject.RecentProjectRoomDatabase
@@ -29,6 +33,10 @@ val coreModule =
 
 		// Analytics
 		single<IAnalyticsManager> { AnalyticsManager() }
+
+		single<OpenCodeClient> { OpenCodeHttpClient() }
+		single { OpenCodeChatRepository(get()) }
+		viewModel { OpenCodeChatViewModel(get()) }
 
 		viewModel {
 			GitBottomSheetViewModel(get())

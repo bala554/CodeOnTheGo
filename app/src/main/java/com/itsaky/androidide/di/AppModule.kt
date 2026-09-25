@@ -59,4 +59,31 @@ val coreModule =
 		single { GitCredentialsManager(get()) }
 
 		single { PendingDeepLinkOpen() }
+
+		// OpenCode Agent
+		single { com.itsaky.androidide.agent.opencode.bridge.OpenCodeFileBridge() }
+		single { com.itsaky.androidide.agent.opencode.network.OpenCodeClient(get()) }
+		single<com.itsaky.androidide.agent.opencode.registry.AgentRegistry> {
+			com.itsaky.androidide.agent.opencode.registry.DefaultAgentRegistry(
+				androidApplication(),
+				get(named(APPLICATION_SCOPE))
+			)
+		}
+		single {
+			com.itsaky.androidide.agent.opencode.service.OpenCodeConnectionService(
+				androidApplication(),
+				get(named(APPLICATION_SCOPE))
+			)
+		}
+		single {
+			com.itsaky.androidide.agent.opencode.repository.OpenCodeRepository(
+				androidApplication(),
+				get(),
+				get(),
+				get(named(APPLICATION_SCOPE)),
+				get(),
+				get()
+			)
+		}
+		viewModel { com.itsaky.androidide.agent.opencode.viewmodel.OpenCodeChatViewModel(get()) }
 	}

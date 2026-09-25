@@ -34,7 +34,7 @@ plugins {
 	id("com.itsaky.androidide.desugaring")
 	// Sentry gradle plugin; the SDK it wires up reports to our GlitchTip backend.
 	alias(libs.plugins.sentry)
-	alias(libs.plugins.google.services)
+	// alias(libs.plugins.google.services)
 	alias(libs.plugins.kotlin.compose)
 }
 
@@ -73,6 +73,10 @@ android {
 
 	signingConfigs {
 		getByName("debug") {
+			storeFile = rootProject.file("debug.keystore")
+			storePassword = "android"
+			keyAlias = "androiddebugkey"
+			keyPassword = "android"
 			enableV2Signing = true
 			enableV3Signing = true
 		}
@@ -518,9 +522,9 @@ val pluginApiFatJar =
 	tasks.register<Jar>("assemblePluginApiFatJar") {
 		dependsOn(
 			":plugin-api:assembleRelease",
-			":common:assembleV8Release",
-			":eventbus-events:assembleV8Release",
-			":idetooltips:assembleV8Release",
+			":common:assembleRelease",
+			":eventbus-events:assembleRelease",
+			":idetooltips:assembleRelease",
 		)
 		archiveFileName.set("plugin-api-1.0.0.jar")
 		destinationDirectory.set(layout.buildDirectory.dir("plugin-maven-repo-staging"))
@@ -845,11 +849,11 @@ val noCompressDebug = noCompress - "jar" - "so"
 val noCompressRelease = noCompress - "so"
 
 afterEvaluate {
-	tasks.named("assembleV8Release").configure {
+	tasks.matching { it.name == "assembleRelease" }.configureEach {
 		finalizedBy("recompressApk")
 
 		doLast {
-			tasks.named("recompressApk").configure {
+			tasks.matching { it.name == "recompressApk" }.configureEach {
 				extensions.extraProperties["abi"] = "v8"
 				extensions.extraProperties["buildName"] = "release"
 				extensions.extraProperties["noCompressExtensions"] = noCompressRelease
@@ -861,59 +865,19 @@ afterEvaluate {
 		}
 	}
 
-	tasks.named("assembleV7Release").configure {
-		finalizedBy("recompressApk")
-
-		doLast {
-			tasks.named("recompressApk").configure {
-				extensions.extraProperties["abi"] = "v7"
-				extensions.extraProperties["buildName"] = "release"
-				extensions.extraProperties["noCompressExtensions"] = noCompressRelease
-			}
-		}
-
-		if (!isCiCd) {
-			dependsOn("assetsDownloadRelease")
-		}
-	}
-
-	tasks.named("assembleV8Debug").configure {
+	tasks.matching { it.name == "assembleDebug" }.configureEach {
 		if (isCiCd) {
 			finalizedBy("recompressApk")
 		}
 
 		doLast {
 			if (isCiCd) {
-				tasks.named("recompressApk").configure {
+				tasks.matching { it.name == "recompressApk" }.configureEach {
 					extensions.extraProperties["abi"] = "v8"
 					extensions.extraProperties["buildName"] = "debug"
 					extensions.extraProperties["noCompressExtensions"] = noCompressDebug
 				}
 			}
-		}
-
-		if (!isCiCd) {
-			dependsOn("assetsDownloadDebug")
-		}
-	}
-
-	tasks.named("assembleV7Debug").configure {
-		if (isCiCd) {
-			finalizedBy("recompressApk")
-		}
-
-		doLast {
-			if (isCiCd) {
-				tasks.named("recompressApk").configure {
-					extensions.extraProperties["abi"] = "v7"
-					extensions.extraProperties["buildName"] = "debug"
-					extensions.extraProperties["noCompressExtensions"] = noCompressDebug
-				}
-			}
-		}
-
-		if (!isCiCd) {
-			dependsOn("assetsDownloadDebug")
 		}
 	}
 }
@@ -1453,15 +1417,12 @@ fun assetsBatch(
 		val tmpDir = File(projectDir, ".tmp/assets")
 		tmpDir.mkdirs()
 		project.logger.lifecycle("Downloading $variant assets → ${tmpDir.absolutePath}")
-		@Suppress("DEPRECATION")
-		project.exec {
-			commandLine(
-				"scp",
-				"-r",
-				"$scpServer:public_html/dev-assets/$variant/",
-				tmpDir.absolutePath,
-			)
-		}
+		ProcessBuilder(
+			"scp",
+			"-r",
+			"$scpServer:public_html/dev-assets/$variant/",
+			tmpDir.absolutePath,
+		).inheritIO().start().waitFor()
 		project.logger.lifecycle("SCP batch downloaded $variant assets → ${tmpDir.absolutePath}")
 	}
 }

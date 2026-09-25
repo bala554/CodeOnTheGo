@@ -1,0 +1,39 @@
+{
+  "${'$'}schema": "../schemas/agent-manifest.schema.json",
+  "id": "opencode-core",
+  "name": "OpenCode AI Engine",
+  "version": "1.18.31",
+  "description": "Autonomous local code intelligence server engine without external telemetry or API keys.",
+  "server_type": "binary",
+  "default_port": 4098,
+  "dynamic_port_allowed": true,
+  "health_check_endpoint": "/health",
+  "capabilities": [
+    "file_read",
+    "file_write",
+    "terminal_exec"
+  ],
+  "distribution": {
+    "android_arm64": {
+      "url": "https://github.com/opencode-org/opencode/releases/download/v1.18.31/opencode-android-arm64.tar.gz",
+      "sha256": "4f9b8c3d2e1a0b5f6e7d8c9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+      "executable_path": "bin/opencode"
+    },
+    "linux_x64": {
+      "url": "https://github.com/opencode-org/opencode/releases/download/v1.18.31/opencode-linux-x64.tar.gz",
+      "sha256": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+      "executable_path": "bin/opencode"
+    }
+  },
+  "spawn_arguments": [
+    "serve",
+    "--port",
+    "${PORT}",
+    "--cors-allow-origin",
+    "*"
+  ],
+  "environment_variables": {
+    "OPENCODE_DISABLE_TELEMETRY": "1",
+    "OPENCODE_HOST": "127.0.0.1"
+  }
+}

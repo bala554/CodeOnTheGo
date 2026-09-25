@@ -1,0 +1,6 @@
+{
+  "name": "Code On The Go",
+  "description": "Android IDE with OpenCode AI Agent Integration",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

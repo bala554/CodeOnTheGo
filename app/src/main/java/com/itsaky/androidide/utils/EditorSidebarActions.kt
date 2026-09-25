@@ -45,6 +45,7 @@ import com.itsaky.androidide.actions.sidebar.BuildVariantsSidebarAction
 import com.itsaky.androidide.actions.sidebar.CloseProjectSidebarAction
 import com.itsaky.androidide.actions.sidebar.FileTreeSidebarAction
 import com.itsaky.androidide.actions.sidebar.HelpSideBarAction
+import com.itsaky.androidide.actions.sidebar.OpenCodeSidebarAction
 import com.itsaky.androidide.actions.sidebar.PreferencesSidebarAction
 import com.itsaky.androidide.actions.sidebar.TerminalSidebarAction
 import com.itsaky.androidide.fragments.sidebar.EditorSidebarFragment
@@ -81,11 +82,12 @@ internal object EditorSidebarActions {
         registry.registerAction(FileTreeSidebarAction(context, ++order))
         registry.registerAction(BuildVariantsSidebarAction(context, ++order))
         registry.registerAction(TerminalSidebarAction(context, ++order))
+        registry.registerAction(OpenCodeSidebarAction(context, ++order))
         registry.registerAction(PreferencesSidebarAction(context, ++order))
         registry.registerAction(CloseProjectSidebarAction(context, ++order))
         registry.registerAction(HelpSideBarAction(context, ++order))
 
-        // Set built-in item count (6 items) for sidebar slot management
+        // Set built-in item count (7 items) for sidebar slot management
         SidebarSlotManager.setBuiltInItemCount(order + 1)
 
         // Register plugin sidebar items

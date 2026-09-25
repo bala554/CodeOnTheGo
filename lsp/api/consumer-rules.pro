@@ -1,1 +1,0 @@
--keep class com.itsaky.androidide.lsp.debug.model.ThreadState { *; }

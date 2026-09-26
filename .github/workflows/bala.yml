@@ -1,8 +1,8 @@
-name: Build Android APK
+Name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "stage" ]
   workflow_dispatch:
 
 jobs:

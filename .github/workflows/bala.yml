@@ -24,9 +24,6 @@ jobs:
           java-version: "21"
           cache: "gradle"
 
-      - name: Install Flox Toolchain
-        uses: flox/install-flox-action@v2
-
       - name: Ensure Debug Keystore Exists
         run: |
           if [ ! -f debug.keystore ]; then
@@ -39,8 +36,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build V8 Debug APK for Physical Devices (ARM64)
-        run: |
-          flox activate -d flox/base -- ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
+        run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
 
       - name: Upload Phone APK Artifact
         uses: actions/upload-artifact@v4

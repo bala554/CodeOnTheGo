@@ -1,0 +1,459 @@
+# Plugin Authoring Guide
+
+This is the canonical in-repo reference for authoring a Code on the Go
+plugin. It covers project layout, the `AndroidManifest.xml` meta-data
+contract, theme-aware icons, building, installing, and common failure
+modes.
+
+For higher-level architecture and product-side context, see the
+[Plugin Development wiki page](https://appdevforall.atlassian.net/wiki/x/BQANIQ).
+
+The closest in-tree example today is `apk-viewer-plugin/`. Note that
+the existing sample plugins do **not** yet ship theme-aware icons — the
+icon section below is the source of truth until they're updated.
+
+## Project layout
+
+A plugin is a standalone Android module that compiles to a `.cgp` file
+(a renamed APK). Recommended layout:
+
+```
+my-plugin/
+├── build.gradle.kts
+├── proguard-rules.pro
+├── settings.gradle.kts
+└── src/main/
+    ├── AndroidManifest.xml          # All plugin metadata lives here
+    ├── assets/                      # Theme icons go here (PNG/WebP)
+    │   ├── icon_day.png
+    │   └── icon_night.png
+    ├── kotlin/.../MyPlugin.kt       # Implements IPlugin
+    └── res/                         # Standard Android resources (layouts, etc.)
+        ├── layout/
+        └── values/
+```
+
+The build is wired up by applying `com.itsaky.androidide.plugins.build`
+in `build.gradle.kts`:
+
+```kotlin
+plugins {
+    id("com.android.application") version "8.8.2"
+    id("org.jetbrains.kotlin.android") version "2.3.0"
+    id("com.itsaky.androidide.plugins.build")
+}
+
+pluginBuilder {
+    pluginName = "my-plugin"   // becomes my-plugin.cgp
+    pluginVersion = "1.0.0"
+}
+```
+
+### Depending on the plugin API
+
+The IDE-side API your plugin compiles against ships as a Maven **coordinate**,
+injected into the on-device local Maven repository during onboarding — so it
+resolves offline, with no `libs/*.jar` to commit:
+
+```kotlin
+dependencies {
+    compileOnly("com.itsaky.androidide:plugin-api:1.0.0")
+}
+```
+
+`plugin-api:1.0.0` is a single jar bundling the API surface plugins compile
+against — the `:plugin-api` module plus `common`, `eventbus-events`, and
+`idetooltips`. The builder plugin applied above resolves the same way, from the
+injected `com.itsaky.androidide.plugins.build` `1.0.0` marker.
+
+#### Building on-device (offline) pins the AGP/Kotlin/Gradle versions
+
+The `plugins {}` example above uses AGP `8.8.2` / Kotlin `2.3.0` — the versions the
+dev/CI repo resolves online. A plugin built **on-device** resolves its build plugins from
+the harvested on-device `localMvnRepository`, which ships only the versions pinned in
+`org.adfa.constants` — `ANDROID_GRADLE_PLUGIN_VERSION`, `KOTLIN_VERSION` and
+`GRADLE_DISTRIBUTION_VERSION`, currently **AGP `9.3.1`**, **Kotlin `2.3.21`** and
+**Gradle `9.6.1`**. Request those, or offline resolution of the build plugins fails. That
+constants file is authoritative; the numbers here are a snapshot of it.
+
+AGP 9 compiles Kotlin itself and **refuses** the `org.jetbrains.kotlin.android` plugin, so
+an on-device build drops it and pins Kotlin through the `kotlin-gradle-plugin` jar on the
+**root** buildscript classpath, which is where AGP 9 takes its compiler from. Declare AGP
+`apply false` in the same root file (as the standard CoGo project template does):
+
+```kotlin
+buildscript {
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+    }
+}
+
+plugins {
+    id("com.android.application") apply false version "9.3.1"
+    id("com.android.library") apply false version "9.3.1"
+}
+```
+
+CoGo injects `LogSenderPlugin` (via its build init script) into every module; that
+plugin references AGP's `ApplicationVariant` and is loaded from the root buildscript
+classpath, so a root without AGP fails configuration with
+`NoClassDefFoundError: com/android/build/api/variant/ApplicationVariant`.
+
+> The in-app plugin-project detector still recognizes a project by a
+> `libs/plugin-api.jar` on disk; dropping that on-disk requirement so a
+> coordinate-only plugin is recognized is tracked in ADFA-4913.
+
+## AndroidManifest meta-data reference
+
+All plugin metadata is declared as `<meta-data>` tags inside
+`<application>` in `src/main/AndroidManifest.xml`. The loader reads
+these in `PluginLoader.getPluginMetadata()`
+(`plugin-manager/src/main/kotlin/com/itsaky/androidide/plugins/manager/loaders/PluginLoader.kt`).
+
+| Key                       | Type                    | Required | Notes                                                                 |
+|---------------------------|-------------------------|----------|-----------------------------------------------------------------------|
+| `plugin.id`               | string                  | yes\*    | Unique plugin identifier. Falls back to the APK's package name.       |
+| `plugin.name`             | string                  | yes\*    | Display name.                                                         |
+| `plugin.version`          | string                  | yes\*    | Defaults to `"1.0.0"`. Prefer `${pluginVersion}` from `pluginBuilder`. |
+| `plugin.description`      | string                  | no       | Shown in the plugin list.                                             |
+| `plugin.author`           | string                  | no       |                                                                       |
+| `plugin.main_class`       | string (FQCN)           | **yes**  | FQCN of your `IPlugin` implementation. Plugin fails to load if absent.|
+| `plugin.min_ide_version`  | string                  | yes\*    | Defaults to `"1.0.0"`.                                                |
+| `plugin.max_ide_version`  | string                  | no       |                                                                       |
+| `plugin.permissions`      | string (comma-separated)| no       | See [Permissions](#permissions).                                      |
+| `plugin.dependencies`     | string (comma-separated)| no       | Plugin IDs this plugin requires.                                      |
+| `plugin.sidebar_items`    | int                     | no       | Number of sidebar entries this plugin contributes. Default `0`.       |
+| `plugin.icon_day`         | string (ZIP path)       | see below| Asset path inside the `.cgp` for the light-theme icon.                |
+| `plugin.icon_night`       | string (ZIP path)       | see below| Asset path inside the `.cgp` for the dark-theme icon.                 |
+| `plugin.vcs_revision`     | string                  | no       | Use `${pluginVcsRevision}`. See [Provenance](#provenance).            |
+| `plugin.build_timestamp`  | string                  | no       | Use `${pluginBuildTimestamp}`. See [Provenance](#provenance).         |
+
+\* The loader supplies a default if the tag is absent, so the install
+won't fail, but the plugin will be hard to identify in the UI.
+
+To choose `plugin.min_ide_version`, see the
+[Plugin API Changelog](PLUGIN_API_CHANGELOG.md) — it maps each plugin
+capability to the `YY.WW` release that first shipped it.
+
+Example (adapted from `apk-viewer-plugin/src/main/AndroidManifest.xml`):
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="My Plugin"
+        android:theme="@style/PluginTheme">
+
+        <meta-data android:name="plugin.id"              android:value="com.example.myplugin" />
+        <meta-data android:name="plugin.name"            android:value="My Plugin" />
+        <meta-data android:name="plugin.version"         android:value="${pluginVersion}" />
+        <meta-data android:name="plugin.description"     android:value="One-line description." />
+        <meta-data android:name="plugin.author"          android:value="Your Name" />
+        <meta-data android:name="plugin.main_class"      android:value="com.example.myplugin.MyPlugin" />
+        <meta-data android:name="plugin.min_ide_version" android:value="1.0.0" />
+        <meta-data android:name="plugin.permissions"     android:value="filesystem.read" />
+        <meta-data android:name="plugin.sidebar_items"   android:value="1" />
+
+        <meta-data android:name="plugin.icon_day"        android:value="assets/icon_day.png" />
+        <meta-data android:name="plugin.icon_night"      android:value="assets/icon_night.png" />
+
+        <meta-data android:name="plugin.vcs_revision"    android:value="${pluginVcsRevision}" />
+        <meta-data android:name="plugin.build_timestamp" android:value="${pluginBuildTimestamp}" />
+    </application>
+</manifest>
+```
+
+`extensions` and `build_actions` are not readable from
+`AndroidManifest.xml` meta-data — they're only honored when supplied
+via a `plugin.json` fallback manifest. If your plugin needs either,
+use the JSON form (see `PluginManifest.kt`).
+
+## Theme-aware icons
+
+The plugin manager renders a different icon based on whether the system
+is in light or dark mode (`PluginListItem.kt:69-70`). To opt in, ship
+two raster icons in your plugin and point at them from the manifest.
+
+### Where the files go
+
+Put your icons in **`src/main/assets/`**:
+
+```
+src/main/assets/
+├── icon_day.png
+└── icon_night.png
+```
+
+**Do not** use `res/drawable/` or `res/raw/`. The loader does a
+literal ZIP-entry lookup against the *compiled* `.cgp`
+(`PluginLoader.kt:207`), and AAPT2 rewrites resource paths during the
+build (vector XML becomes compiled binary XML; bitmaps may move to
+density-qualified directories). Only `assets/<name>` is preserved
+verbatim, so it's the only location where the path you write in the
+manifest matches the path the loader will find.
+
+### Supported formats
+
+- **PNG** (recommended)
+- **WebP**
+- **JPEG**
+
+**Not supported:** raw SVG, Android vector drawable XML (compiled or
+not). Icons are decoded with `BitmapFactory` (`FileImage.kt:102`), which
+handles raster formats only. Convert SVG sources to PNG yourself
+before bundling.
+
+### Recommended dimensions
+
+96×96 px square. The plugin list renders icons at roughly 48dp, so
+96 px covers xxxhdpi devices with headroom.
+
+### Manifest declaration
+
+```xml
+<meta-data android:name="plugin.icon_day"
+           android:value="assets/icon_day.png" />
+<meta-data android:name="plugin.icon_night"
+           android:value="assets/icon_night.png" />
+```
+
+The value is the literal path inside the `.cgp` ZIP, **not** an
+Android resource reference. No `@drawable/...`, no leading slash.
+
+### Debug builds must ship both icons
+
+If your plugin is built with `assemblePluginDebug` (i.e. the resulting
+APK has `FLAG_DEBUGGABLE`), the installer **rejects** the plugin
+unless both `plugin.icon_day` and `plugin.icon_night` are declared
+**and** both files are present inside the `.cgp`. The check is in
+`PluginRepositoryImpl.kt:105`, and the error message is verbatim:
+
+> `[<pluginId>] Missing <keys> for debug plugin. Debug plugins must declare and ship both icon_day and icon_night assets.`
+
+The uploaded `.cgp` is deleted when this fires. Release builds may
+omit icons; they fall back to the generic `ic_extension` puzzle-piece
+drawable, tinted with `?attr/colorOnSurface` so it adapts to the
+theme automatically.
+
+### Runtime location (debugging only)
+
+On install, both icons are extracted to a per-plugin directory on the
+device:
+
+```
+/data/data/<app-id>/app_plugin_icons/<plugin-id>/icon_day.<ext>
+/data/data/<app-id>/app_plugin_icons/<plugin-id>/icon_night.<ext>
+```
+
+Useful for confirming the install actually unpacked the files (see
+[Troubleshooting](#troubleshooting) below).
+
+## Building & installing
+
+From the repo root, with the flox environment active:
+
+```bash
+flox activate -d flox/local -- ./gradlew :my-plugin:assemblePlugin       # release
+flox activate -d flox/local -- ./gradlew :my-plugin:assemblePluginDebug   # debug
+```
+
+Output:
+
+- Release: `my-plugin/build/plugin/my-plugin.cgp`
+- Debug:   `my-plugin/build/plugin/my-plugin-debug.cgp`
+
+To install, transfer the `.cgp` to the device and use the in-app
+plugin manager (Settings → Plugins → Install). The installer
+validates the manifest, extracts icons, and registers the plugin.
+
+## Provenance
+
+Every `.cgp` records the commit it was built from, so a bug report can be
+traced back to source. The builder resolves it once per build and publishes it
+three ways: the two `meta-data` entries above, `assets/cgp-build.properties`
+inside the archive, and the IDE's plugin details dialog.
+
+```bash
+unzip -p my-plugin/build/plugin/my-plugin.cgp assets/cgp-build.properties
+```
+
+```properties
+name=my-plugin
+version=1.0.0-release.20260901161500
+variant=release
+revision=737f8836b6ce
+revision_source=git
+timestamp=20260901161500
+timestamp_source=commit
+```
+
+`revision_source` says how the revision was found, in the order the builder
+tries them:
+
+| Value               | Meaning                                                          |
+|---------------------|------------------------------------------------------------------|
+| `explicit`          | You set `pluginBuilder { pluginVcsRevision = "..." }`.            |
+| `env:<VAR>`         | Read from `PLUGIN_VCS_REVISION`, `GITHUB_SHA`, `CI_COMMIT_SHA` or `GIT_COMMIT`. |
+| `git`               | `git rev-parse` in the plugin directory.                          |
+| `git-dir`           | Read out of `.git` directly. This is the on-device path -- Code on the Go ships JGit in-process, not a `git` binary. |
+| `none`              | Nothing answered; `revision` is `unknown`.                        |
+
+`revision` gains a `+dirty` suffix when the plugin's own directory has
+uncommitted changes. The check is scoped to that directory, so unrelated dirt
+elsewhere in the repository does not flag your build.
+
+`timestamp` is the committer date of that revision, in UTC, so two builds of one
+commit produce a byte-identical `.cgp`. When git cannot be reached the builder
+falls back to the clock and says so with `timestamp_source=wall-clock` -- that
+stamp also lands in the autogenerated version string, so a wall-clock build is
+not reproducible. Building inside Code on the Go always takes that fallback: the
+IDE embeds JGit rather than shipping a `git` binary, so it can read your commit
+out of `.git` but not that commit's date.
+
+If you distribute your plugin as a source archive rather than a repository,
+`git archive` and tarballs carry no `.git`, so state the revision yourself:
+
+```kotlin
+pluginBuilder {
+    pluginName = "my-plugin"
+    pluginVcsRevision = "737f8836b6ce"
+}
+```
+
+The record is always written, even when everything is unknown -- a file saying
+`revision=unknown` is a definite statement, whereas a missing one is ambiguous
+between an old builder, a community build, and tampering.
+
+Reading back, the IDE treats a blank provenance value as an absent one, so a
+hand-written `plugin.vcs_revision=""` shows no `Built From` row at all rather
+than an empty one. Let the placeholder fill the value in and this never comes
+up.
+
+## Permissions
+
+Declare permissions as a comma-separated list in `plugin.permissions`.
+Defined by `PluginPermission` in `plugin-api/src/main/kotlin/com/itsaky/androidide/plugins/IPlugin.kt`:
+
+| Key                      | Grants                                                                          |
+|--------------------------|---------------------------------------------------------------------------------|
+| `filesystem.read`        | Read files from the project directory                                           |
+| `filesystem.write`       | Write files to the project directory                                            |
+| `network.access`         | Access network resources                                                        |
+| `system.commands`        | Execute system commands                                                         |
+| `ide.settings`           | Modify IDE settings                                                             |
+| `project.structure`      | Modify project structure                                                        |
+| `native.code`            | Execute native machine code                                                     |
+| `ide.environment.write`  | Write to IDE-managed directories (Android SDK, NDK, cache)                      |
+
+## Contributing a language
+
+Implement `LanguageExtension` to give a file type syntax highlighting, a language server, or both:
+
+```kotlin
+override fun getLanguages() = listOf(
+    LanguageDefinition(
+        languageId = "python",
+        fileExtensions = setOf("py"),
+        grammar = TreeSitterGrammar(name = "python", queriesAssetPath = "treesitter/python"),
+        server = LanguageServerDefinition(command = listOf("pylsp")),
+    ),
+)
+```
+
+- **Grammar.** Ship `lib/<abi>/libtree-sitter-<name>.so` for `arm64-v8a` and `armeabi-v7a`, exporting `tree_sitter_<name>`, generated at tree-sitter language ABI 13 or 14 (grammar releases up to 0.23.x). Build it from the grammar's `src/parser.c` and `src/scanner.c` with `externalNativeBuild`; `Python-Tools` and `Go-Tools` in `plugin-examples` do this. Needs `native.code`. Grammar names are shared by every plugin: while one plugin's `<name>` grammar is open in an editor, another plugin's grammar of the same name does not load and its files open without highlighting.
+- **Queries.** Put `highlights.scm` (optionally `locals.scm`, `blocks.scm`, `brackets.scm`, `indents.scm`) in `assets/<queriesAssetPath>/`. Use standard capture names so every colour scheme can style them. When two patterns capture the same node at the same position, the one listed **first** wins, so put catch-all patterns such as `(identifier) @variable` last.
+- **Server.** Any stdio language server. A bare command resolves against the Termux `bin` directory; an absolute path runs as is. It starts when the first matching file opens, with the Termux environment plus `environment`, and is restarted up to twice if it crashes. Needs `system.commands`. Environment variable names must be non-empty and contain no `=` or NUL, and values no NUL, or the language is not registered. Install the server yourself, for example with `IdeCommandService`.
+- If the grammar library will not load or a query does not parse, the IDE logs the error and opens the file without tree-sitter highlighting.
+- Files that are already open switch to the language when the plugin is loaded, enabled or disabled; the user does not need to reopen them.
+- File extensions the IDE already handles cannot be claimed. Set `plugin.min_ide_version` to `26.41` or later.
+
+## Porting an Android Studio plugin
+
+Code on the Go cannot load Android Studio or IntelliJ plugins ([ADR 0018](adr/0018-android-studio-plugins-are-ported-not-run.md)): they are built on Swing and on IntelliJ's IDE layer, neither of which exists here. A port keeps the plugin's logic and replaces what touches the platform. Swing UI becomes Android `Fragment`s, and each `plugin.xml` extension maps to an extension interface or service:
+
+| Android Studio (`plugin.xml`) | Code on the Go |
+|---|---|
+| `<action>` in a main-menu group | `UIExtension.getMainMenuItems()` returning `MenuItem`s |
+| `<action>` in a toolbar group | `UIExtension.getToolbarActions()` returning `ToolbarAction`s |
+| `<action>` in the editor-tab popup menu | `FileOpenExtension.getFileTabMenuItems()` |
+| `toolWindow` (`ToolWindowFactory`) | `UIExtension.getEditorTabs()` for a tab in the editor's bottom sheet, or `getSideMenuItems()` for a sidebar entry |
+| `fileEditorProvider` | `FileOpenExtension.canHandleFileOpen`/`handleFileOpen`, showing the file in an `EditorTabExtension` tab selected with `IdeEditorTabService.selectPluginTab` - `apk-viewer-plugin` does this |
+| `applicationConfigurable` / `projectConfigurable` | `SettingsExtension` returning a `PluginSettingsEntry` that names your settings `Fragment` |
+| `DialogWrapper` or another full-screen Swing UI | A `Fragment` opened with `IdeUIService.openPluginScreen` |
+| `defaultLiveTemplates` | `SnippetExtension` returning `SnippetContribution`s. Bodies use TextMate syntax: rewrite `$NAME$` variables as `${1:NAME}` and `$END$` as `$0` |
+| `fileType`, `lang.parserDefinition`, `lang.syntaxHighlighterFactory` | `LanguageExtension` with a `TreeSitterGrammar` - see [Contributing a language](#contributing-a-language) |
+| `completion.contributor`, `annotator`, `localInspection`, `gotoDeclarationHandler`, `lang.formatter` | A language server in `LanguageServerDefinition`. The IDE uses its completion, diagnostics, go-to-definition, references, signature help, selection expansion and formatting |
+| Highlighting layered over a language (e.g. rainbow brackets) | `EditorDecorationProvider`, which adds foreground colours only |
+| `searchEverywhereContributor` | `ProjectSearchExtension`, which appends sections to Search Results |
+| `runConfigurationType`, external tools | `BuildActionExtension` returning `PluginBuildAction`s that run a `CommandSpec` |
+| Project or module wizard | A `.cgt` template, built with `IdeTemplateService.createTemplateBuilder` and added with `registerTemplate` |
+| `applicationService` / `projectService` | Objects your plugin owns. Offer one to other plugins with `PluginContext.registerService`; reach IDE services with `PluginContext.services.get(...)` |
+
+No equivalent yet:
+
+- **Editor context-menu actions.** `UIExtension.getContextMenuItems()` exists, but the IDE does not call it.
+- **Quick fixes, intention actions and hover documentation.** The language-server bridge does not request code actions or hover.
+- **Message-bus listeners** (`applicationListeners`, `projectListeners`). `PluginContext.eventBus` is the IDE's EventBus, typed `Any`; its events are not part of the [plugin API contract](plugin-api.md), so a subscriber can break on any release.
+- **Anything that depends on the Android plugin** bundled with Android Studio (`org.jetbrains.android`).
+
+## Porting a VS Code extension
+
+Code on the Go does not host VS Code's extension API ([ADR 0019](adr/0019-vscode-extensions-are-ported-not-hosted.md)): extensions run on Node.js, which Code on the Go's package repository does not carry, against a `vscode` API that does not exist here. A port keeps the open standards the extension is built on and rewrites the rest. Much of what `package.json` declares maps to an extension interface:
+
+| VS Code (`package.json` / API) | Code on the Go |
+|---|---|
+| A language client that starts a language server | `LanguageServerDefinition` with the server's command - see [Contributing a language](#contributing-a-language). The server must run on the device: a native Termux build, or a Java or Python server on the bundled runtimes. Node.js servers do not run |
+| `contributes.languages`, `contributes.grammars` | `LanguageExtension` with a `TreeSitterGrammar`. TextMate grammars are not supported; use the language's tree-sitter grammar |
+| `contributes.snippets` | `SnippetExtension`. The body syntax is the same; map each entry's `prefix`, `body` and `description`, adding one `SnippetContribution` per prefix when `prefix` is a list. Set `scope` to one the target language defines, such as Kotlin's `global` |
+| `contributes.commands` in `menus.commandPalette` or `menus["editor/title"]` | `UIExtension.getMainMenuItems()` or `getToolbarActions()` |
+| `menus["editor/title/context"]` | `FileOpenExtension.getFileTabMenuItems()` |
+| `contributes.viewsContainers`, `contributes.views` | `UIExtension.getSideMenuItems()` for a sidebar entry, or `getEditorTabs()` for a tab in the editor's bottom sheet |
+| `contributes.customEditors` | `FileOpenExtension` plus an `EditorTabExtension` tab, as for an Android Studio `fileEditorProvider` |
+| `window.createWebviewPanel` | A `Fragment` hosting an Android `WebView`, shown as an `EditorTabExtension` tab - `markdown-preview-plugin` does this |
+| `contributes.configuration` | `SettingsExtension`, storing values with `PluginContext.getPluginSharedPreferences` |
+| `contributes.taskDefinitions` | `BuildActionExtension` returning `PluginBuildAction`s that run a `CommandSpec` |
+
+No equivalent yet:
+
+- **Colour themes** (`contributes.themes`). Colour schemes are built in; a plugin cannot add one.
+- **Debuggers** (`contributes.debuggers`). The IDE's debugger does not speak the Debug Adapter Protocol.
+- **Explorer and editor context menus** (`menus["explorer/context"]`, `menus["editor/context"]`). `UIExtension.getContextMenuItems()` exists, but the IDE does not call it.
+- **In-process language providers** (`languages.registerCompletionItemProvider` and the like). Put the logic in a language server instead.
+- **Workspace events** (`workspace.onDidSaveTextDocument` and the like). As for Android Studio's message-bus listeners, `PluginContext.eventBus` is not part of the plugin API contract.
+
+## Troubleshooting
+
+**Install fails with "Missing icon_day and icon_night for debug plugin"**
+
+Your debug build is missing one or both icons. Check:
+1. Both `<meta-data>` tags are present in `AndroidManifest.xml`.
+2. Both files exist in `src/main/assets/`.
+3. After building, `unzip -l my-plugin/build/plugin/my-plugin-debug.cgp | grep assets`
+   shows both `assets/icon_day.png` and `assets/icon_night.png`.
+
+**Plugin lists shows the generic puzzle-piece icon instead of yours**
+
+The loader couldn't find the file at the declared ZIP path. The
+manifest value must match the actual path inside the `.cgp` byte-for-byte.
+
+```bash
+# Inspect what the manifest declares:
+aapt2 dump xmltree my-plugin/build/plugin/my-plugin.cgp --file AndroidManifest.xml | grep icon_
+
+# Inspect what's actually in the ZIP:
+unzip -l my-plugin/build/plugin/my-plugin.cgp | grep -E 'assets|icon'
+```
+
+Common causes: typo in the manifest path, file accidentally placed
+under `res/raw/` or `res/drawable/`, or a leading slash on the
+manifest value (use `assets/icon_day.png`, not `/assets/icon_day.png`).
+
+**Wrong icon shows for the current theme**
+
+The selection happens in `PluginListItem.kt:69-70` via
+`isSystemInDarkMode()`. Verify your device is actually in the theme
+you expect (system Settings → Display). Also verify both files
+extracted to the device:
+
+```bash
+adb shell run-as <your.app.id> ls app_plugin_icons/<plugin-id>/
+```

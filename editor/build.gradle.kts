@@ -1,0 +1,69 @@
+import com.itsaky.androidide.build.config.BuildConfig
+
+plugins {
+	id("com.android.library")
+	id("kotlin-android")
+	id("kotlin-kapt")
+	id("com.google.devtools.ksp") version libs.versions.ksp
+}
+
+android {
+	namespace = "${BuildConfig.PACKAGE_NAME}.editor"
+}
+
+kapt {
+	arguments {
+		arg("eventBusIndex", "${BuildConfig.PACKAGE_NAME}.events.EditorEventsIndex")
+	}
+}
+
+dependencies {
+	ksp(projects.annotationProcessorsKsp)
+	kapt(projects.annotationProcessors)
+
+	api(libs.androidide.ts)
+	api(libs.androidide.ts.java)
+	api(libs.androidide.ts.json)
+	api(libs.androidide.ts.kotlin)
+	api(libs.androidide.ts.log)
+	api(libs.androidide.ts.xml)
+	api(libs.androidx.collection)
+	api(platform(libs.sora.bom))
+	api(libs.common.editor)
+
+	api(projects.editorApi)
+	api(projects.editorTreesitter)
+
+	implementation(libs.androidx.annotation)
+	implementation(libs.androidx.appcompat)
+	implementation(libs.androidx.constraintlayout)
+	implementation(libs.androidx.tracing)
+	implementation(libs.androidx.tracing.ktx)
+
+	implementation(libs.google.material)
+
+	implementation(projects.actions)
+	implementation(projects.annotations)
+	implementation(projects.common)
+	implementation(projects.eventbusAndroid)
+	implementation(projects.eventbusEvents)
+	implementation(projects.lexers)
+	implementation(projects.shared)
+	implementation(projects.resources)
+
+	implementation(projects.lsp.api)
+	implementation(projects.lsp.java)
+	implementation(projects.lsp.kotlin)
+	implementation(projects.lsp.xml)
+
+	implementation(projects.idetooltips)
+
+	testImplementation(projects.testing.unit)
+	androidTestImplementation(projects.testing.android) {
+		// kt-android.jar (kotlin-analysis-api) bundles kotlin.reflect.full; a second copy fails packaging with
+		// duplicate classes. Consequence: MockK, which testing:android exposes, cannot be used in this source
+		// set - it needs kotlin-reflect at runtime and will fail on device with NoClassDefFoundError.
+		exclude(group = "org.jetbrains.kotlin", module = "kotlin-reflect")
+		exclude(group = "com.itsaky.androidide", module = "common")
+	}
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<resources>
+    <!--  Required by F-Droid-->
+    <string name="app_name" translatable="false">Code on the Go</string>
+    <string name="pref_use_simple_local_prompt">Use simplified prompt</string>
+    <string name="msg_strings_injection_failed">Failed to update generated string resources.</string>
+    <string name="msg_strings_injection_file_not_found">Could not find the project string resources file.</string>
+    <string name="msg_strings_injection_parser_unsupported">This device does not support the XML parser configuration required to update generated string resources.</string>
+    <string name="msg_strings_injection_invalid_xml">Generated string resources are not valid XML.</string>
+    <string name="msg_floating_window_open_failed">Couldn\'t open “%1$s” in a floating window.</string>
+</resources>

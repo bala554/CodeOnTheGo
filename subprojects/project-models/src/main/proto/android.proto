@@ -1,0 +1,328 @@
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+option java_outer_classname = "AndroidModels";
+
+package com.itsaky.androidide.project;
+
+import "common.proto";
+
+// The type of Android projects.
+enum ProjectType {
+  ApplicationProject = 0;
+  LibraryProject = 1;
+  DynamicFeature = 2;
+  Test = 3;
+  FusedLibrary = 4;
+}
+
+/**
+ * A node in a dependency graph, representing a direct or transitive dependency.
+ *
+ * This does not directly contain artifact information, instead it focuses on the graph
+ * information (transitive dependencies).
+ *
+ * Nodes are deduplicated by key, so there is one node per resolved artifact rather than one per
+ * usage. Per-usage detail is therefore no longer representable: see [requestedCoordinatesId].
+ */
+message GraphNode {
+
+  /**
+   * Index into [DependencyGraph.key] of this node's unique library key, which matches it with a
+   * [Library] instance.
+   */
+  uint32 keyId = 1;
+
+  /**
+   * Index into [DependencyGraph.requestedCoordinates] of the Maven coordinates this library was
+   * requested with in the build file.
+   *
+   * Requested coordinates are a property of a usage, not of the resolved artifact, so where several
+   * dependents request the same artifact at different coordinates this records only the occurrence
+   * the flattening reached first.
+   *
+   * Check presence before reading: unset reads back as 0, which is also a valid index into
+   * [DependencyGraph.requestedCoordinates].
+   */
+  optional uint32 requestedCoordinatesId = 2;
+
+  /**
+   * Indices into [DependencyGraph.node] of this node's direct dependencies.
+   */
+  repeated uint32 dependency = 3;
+}
+
+/**
+ * A dependency graph, stored flat.
+ *
+ * The previous representation nested each node's children inline, so a dependency DAG serialised as
+ * a tree and every path to a shared artifact duplicated that artifact's entire subtree. Measured on
+ * an 86-module project that produced 786,554 nodes holding 1,011,910 key strings for 57,517 distinct
+ * values -- a 17.6x duplication, with one kotlin-stdlib key repeated 180,738 times.
+ *
+ * Nodes are deduplicated by key and strings interned, so each artifact and each string appears once.
+ * The compile-classpath consumer already expands each key at most once via a visited set, over the
+ * same pre-order walk, so it sees the same graph. The module-dependency consumer reads only the
+ * roots, whose order and multiplicity are unchanged.
+ */
+message DependencyGraph {
+
+  /** Interned node keys, indexed by [GraphNode.keyId]. */
+  repeated string key = 1;
+
+  /** Interned requested coordinates, indexed by [GraphNode.requestedCoordinatesId]. */
+  repeated string requestedCoordinates = 2;
+
+  /** Every distinct node, deduplicated by key. */
+  repeated GraphNode node = 3;
+
+  /** Indices into [node] of the graph's direct dependencies. */
+  repeated uint32 root = 4;
+}
+
+// An unresolved dependency.
+message UnresolvedDependency {
+
+  // The name of the dependency.
+  string name = 1;
+
+  // The cause of the unresolved dependency.
+  optional string cause = 2;
+}
+
+// The dependencies information for a given artifact.
+//
+// It contains the compile graph. The runtime graph is omitted for now.
+//
+// The graph is stored flat: nodes are deduplicated by key and strings interned, so each artifact
+// appears once and carries an address plus its children. Per-usage modifiers do not survive that
+// deduplication -- see GraphNode.
+message ArtifactDependencies {
+
+  // The compile dependency graph, stored flat. See DependencyGraph.
+  DependencyGraph compileGraph = 3;
+
+  reserved 1;
+  reserved "compileDependency";
+
+  // NOTE: We omit runtime dependencies for now.
+
+  // The unresolved dependencies.
+  repeated UnresolvedDependency unresolvedDependency = 2;
+}
+
+// Data about an Android library project.
+message AndroidLibraryData {
+
+  // The paths to JAR files to be used for compilation.
+  repeated string compileJarFilePaths = 1;
+
+  // The path to the manifest file for the library.
+  string manifestFilePath = 2;
+
+  // The path to the res folder of the library.
+  string resFolderPath = 3;
+}
+
+// Types of Android libraries.
+enum LibraryType {
+
+  // The dependency is a sub-project of the Gradle build.
+  Project = 0;
+
+  // The dependency is an external AAR.
+  ExternalAndroidLibrary = 1;
+
+  // The dependency is an external JAR.
+  ExternalJavaLibrary = 2;
+
+  // The dependency is an external dependency with no artifact, pointing to a different artifact
+  // (via Gradle's available-at feature, and possibly via POM's relocation feature.)
+  Relocated = 3;
+
+  // The dependency is an external dependency with no artifact, but it may depend on other
+  // libraries.
+  NoArtifactFile = 4;
+}
+
+// Info about a project.
+message ProjectInfo {
+
+  // The build ID.
+  string buildId = 1;
+
+  // The project path.
+  string projectPath = 2;
+}
+
+// An Android library.
+message Library {
+
+  // The library key.
+  string key = 1;
+
+  // The type of library.
+  LibraryType type = 2;
+
+  // The project information. Only available when type == Project.
+  optional ProjectInfo projectInfo = 3;
+
+  // The library information. Only available when type == ExternalAndroidLibrary or
+  // type == ExternalJavaLibrary.
+  optional LibraryInfo libraryInfo = 4;
+
+  // More data about the Android library. Only available when type == ExternalAndroidLibrary.
+  optional AndroidLibraryData androidLibraryData = 5;
+
+  // The path to the library's artifact file. Only available when type == ExternalAndroidLibrary
+  // or type == ExternalJavaLibrary.
+  optional string artifactPath = 6;
+}
+
+// The dependencies information for a given variant.
+message VariantDependencies {
+
+  // The name of the variant. It is made up of the build type and flavors (if applicable)
+  string name = 1;
+
+  // The dependencies for the variant's main artifact.
+  ArtifactDependencies mainArtifact = 2;
+
+  // The list of external libraries used by all the variants in the module.
+  //
+  // The key for the map entries is the keys found via [com.android.builder.model.v2.ide.GraphItem.key]
+  // and [Library.key]
+  map<string, Library> libraries = 3;
+}
+
+// A custom source directory.
+message CustomSourceDirectory {
+
+  // The path to the source directory.
+  string directoryPath = 1;
+
+  // The name of the source type.
+  string sourceTypeName = 2;
+}
+
+// Android source provider
+message SourceProvider {
+
+  // The paths to the Java source directories.
+  repeated string javaDirs = 1;
+
+  // The paths to the Kotlin source directories.
+  repeated string kotlinDirs = 2;
+
+  // The paths to the resource directories.
+  repeated string resDirs = 3;
+}
+
+// Android source set container.
+message SourceSetContainer {
+
+  // The default source provider.
+  SourceProvider sourceProvider = 1;
+}
+
+// View binding options for Android projects.
+message ViewBindingOptions {
+
+  // Whether view binding is enabled.
+  bool isEnabled = 1;
+}
+
+// An Android variant artifact.
+message AndroidArtifact {
+
+  // Name of the artifact.
+  string name = 1;
+
+  // The application ID of the artifact.
+  optional string applicationId = 2;
+
+  // The name of the task used to generate resources for the artifact.
+  optional string resGenTaskName = 3;
+
+  // The name of the task used to generate source code for the artifact.
+  optional string sourceGenTaskName = 4;
+
+  // The name of the task used to compile the artifact.
+  optional string compileTaskName = 5;
+
+  // The name of the task used to assemble the artifact.
+  optional string assembleTaskName = 6;
+
+  // The path to the output listing file containing the path to the output of
+  // the assemble task of this variant.
+  optional string assembleTaskOutputListingFilePath = 7;
+
+  // The paths to the generated resource folders.
+  repeated string generatedResourceFolderPaths = 8;
+
+  // The paths to the generated source folders.
+  repeated string generatedSourceFolderPaths = 9;
+
+  // The minimum SDK version supported by the artifact.
+  int32 minSdkVersion = 10;
+
+  // The maximum SDK version supported by the artifact.
+  optional int32 maxSdkVersion = 11;
+
+  // The paths to the classes.jar files of the artifact.
+  repeated string classJarPaths = 12;
+
+  // The target SDK version override of the artifact.
+  int32 targetSdkVersionOverride = 13;
+}
+
+// An Android project variant.
+message AndroidVariant {
+
+  // The name of the variant.
+  string name = 1;
+
+  // The 'main' artifact of the variant.
+  AndroidArtifact mainArtifact = 2;
+
+  // The source providers AGP layers over the main source set for this variant: its build
+  // type, each product flavor, the multi-flavor provider and the variant's own provider.
+  repeated SourceProvider variantSourceProviders = 3;
+}
+
+// The Android project model.
+message AndroidProject {
+
+  // The project namespace.
+  optional string namespace = 1;
+
+  // The type of project.
+  ProjectType projectType = 2;
+
+  // The main source set container.
+  SourceSetContainer mainSourceSet = 3;
+
+  // The compiler settings for Java sources.
+  JavaCompilerSettings javaCompilerSettings = 4;
+
+  // The view binding options for the project.
+  ViewBindingOptions viewBindingOptions = 5;
+
+  // The paths to boot classpath files.
+  repeated string bootClassPaths = 6;
+
+  // The available variants in this project.
+  repeated AndroidVariant variant = 7;
+
+  // The name the configured variant.
+  optional string configuredVariantName = 8;
+
+  // The path to the classes.jar file of the project.
+  optional string classesJarPath = 9;
+
+  // The variant dependencies of this project.
+  VariantDependencies variantDependencies = 10;
+
+  // The compiler settings for Kotlin sources.
+  optional KotlinCompilerSettings kotlinCompilerSettings = 11;
+
+}

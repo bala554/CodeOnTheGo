@@ -1,0 +1,278 @@
+package org.appdevforall.codeonthego.indexing.service
+
+import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
+import java.io.Closeable
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Manages the lifecycle of [IndexingService]s and the [IndexRegistry].
+ */
+class IndexingServiceManager(
+	private val scope: CoroutineScope =
+		CoroutineScope(
+			SupervisorJob() + Dispatchers.Default,
+		),
+) : Closeable {
+	companion object {
+		private val log = LoggerFactory.getLogger(IndexingServiceManager::class.java)
+
+		/** The timeout duration for closing indexing services */
+		private val SERVICE_CLOSE_TIMEOUT = 10.seconds
+
+		private val closeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+		/** The most recent background [close], which the next manager waits for. */
+		@Volatile
+		private var pendingClose: Job? = null
+
+		/**
+		 * How long [awaitPendingClose] waits. withTimeoutOrNull cannot interrupt a blocking
+		 * service close, so without this a hung close would stall the next project's setup forever.
+		 */
+		@VisibleForTesting
+		internal var pendingCloseWait = 30.seconds
+
+		/**
+		 * Suspends until every [close] issued so far has finished, or [pendingCloseWait] passes.
+		 * Returns false on timeout: the old indexes may still be open, so callers must not reopen
+		 * them (a later sync retries).
+		 */
+		suspend fun awaitPendingClose(): Boolean {
+			val job = pendingClose ?: return true
+			if (withTimeoutOrNull(pendingCloseWait) { job.join() } != null) return true
+			log.error("Previous indexing close still running after {}; skipping index setup", pendingCloseWait)
+			return false
+		}
+	}
+
+	/**
+	 * The central registry. All services register their indexes here.
+	 * Consumers (LSPs, etc.) retrieve indexes from here.
+	 */
+	val registry = IndexRegistry()
+
+	/** Collects the progress of every service's indexing passes; supplied to a service when it is registered. */
+	val progressTracker = IndexingProgressTracker()
+
+	/** Whether indexing is in flight and how far it got, across every service reporting to [progressTracker]. */
+	val state: StateFlow<IndexingState> get() = progressTracker.state
+
+	/** How many indexing passes have finished; see [IndexingProgressTracker.finishedPasses]. */
+	val finishedPasses: StateFlow<Long> get() = progressTracker.finishedPasses
+
+	private val services = ConcurrentHashMap<String, IndexingService>()
+	private var initialized = false
+
+	/**
+	 * JAR paths already reported unreadable this project session (see [filterNewlyUnreadableJars]).
+	 * Cleared in [close], so a new session reports the same JAR again.
+	 */
+	private val reportedUnreadableJars = Collections.synchronizedSet(mutableSetOf<String>())
+
+	/**
+	 * Returns the subset of [jarPaths] not yet reported unreadable this session, recording every one
+	 * of [jarPaths] as reported.
+	 *
+	 * Shared by every [IndexingService] built against this manager, so a JAR that stays unreadable
+	 * across many passes - a library JAR whose scan two language servers both trigger at project
+	 * open, or a generated JAR re-scanned after every build - is reported to the user once, not once
+	 * per pass. It is still retried every pass regardless: this only dedupes the report, since no
+	 * fingerprint is ever written for a JAR whose scan failed.
+	 */
+	fun filterNewlyUnreadableJars(jarPaths: Collection<String>): List<String> = jarPaths.filter { reportedUnreadableJars.add(it) }
+
+	/**
+	 * Register an [IndexingService].
+	 *
+	 * Must be called before [onProjectSynced]. Services are initialized in an
+	 * unspecified order (they are held in a [ConcurrentHashMap]), so a service's
+	 * [IndexingService.initialize] must not depend on another service having
+	 * been initialized first.
+	 *
+	 * @throws IllegalStateException if called after initialization.
+	 */
+	fun register(service: IndexingService) {
+		if (services.putIfAbsent(service.id, service) != null) {
+			log.warn("Attempt to re-register service with ID: {}", service.id)
+			return
+		}
+
+		log.info("Registered indexing service: {}", service.id)
+	}
+
+	/**
+	 * Called after project sync (e.g. Gradle sync) completes.
+	 *
+	 * On the first call, initializes all registered services
+	 * (creates indexes, registers them). On subsequent calls,
+	 * notifies services of the updated project model.
+	 *
+	 * Services process the event concurrently. Failures in one
+	 * service don't affect others (SupervisorJob).
+	 */
+	fun onProjectSynced() {
+		scope.launch {
+			if (!initialized) {
+				initialized = initializeServices()
+			}
+		}
+	}
+
+	/**
+	 * Called after a build completes.
+	 *
+	 * Forwards the event to all registered services concurrently.
+	 * Failures in one service don't affect others (SupervisorJob).
+	 */
+	fun onBuildCompleted() {
+		if (!initialized) {
+			log.warn("onBuildCompleted called before initialization, ignoring")
+			return
+		}
+		scope.launch {
+			services.values.forEach { service ->
+				launch {
+					try {
+						service.onBuildCompleted()
+					} catch (e: Exception) {
+						log.error("Service '{}' failed in onBuildCompleted", service.id, e)
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Called when source files change.
+	 */
+	fun onSourceChanged() {
+		if (!initialized) return
+	}
+
+	/**
+	 * Returns the registered service with the given ID, or null.
+	 */
+	fun getService(id: String): IndexingService? = services[id]
+
+	/**
+	 * Returns all registered services.
+	 */
+	fun allServices(): List<IndexingService> = services.values.toList()
+
+	/**
+	 * Shut down all services and clear the registry.
+	 */
+	override fun close() {
+		log.info("Shutting down indexing services")
+
+		// Called from ProjectHandlerActivity.onPause on the main thread, so the
+		// closes (SERVICE_CLOSE_TIMEOUT only bounds cooperative ones; SQLiteIndex and
+		// BackgroundIndexer block inside them) run in the background instead of
+		// parking main into an ANR. The next manager's initializeServices() waits
+		// (bounded by pendingCloseWait, skipping setup on timeout) for this job, so two
+		// managers never hold the same index databases.
+		val toClose = services.values.toList()
+		services.clear()
+		initialized = false
+		progressTracker.reset()
+		reportedUnreadableJars.clear()
+
+		val previous = pendingClose
+		pendingClose =
+			closeScope.launch {
+				// Unbounded on purpose: this job must not finish before an earlier close does, or
+				// awaitPendingClose() would report the indexes free while they are still open.
+				previous?.join()
+
+				// Services are closed concurrently (so no ordering is implied) and
+				// failures are isolated per service.
+				val serviceJobs =
+					toClose.map { service ->
+						launch {
+							withTimeoutOrNull(SERVICE_CLOSE_TIMEOUT) {
+								try {
+									service.close()
+									log.debug("Closed service: {}", service.id)
+								} catch (e: Exception) {
+									if (e is CancellationException) throw e
+									log.error("Failed to close service: {}", service.id, e)
+								}
+							} ?: log.warn(
+								"Indexing service {} failed to close within timeout period: {}ms",
+								service.id,
+								SERVICE_CLOSE_TIMEOUT.inWholeMilliseconds,
+							)
+						}
+					}
+
+				val closeRegistryJob =
+					launch {
+						withTimeoutOrNull(SERVICE_CLOSE_TIMEOUT) {
+							try {
+								registry.close()
+							} catch (e: Exception) {
+								if (e is CancellationException) throw e
+								log.error("Failed to close index registry", e)
+							}
+						} ?: log.warn(
+							"Index registry failed to close within timeout: {}ms",
+							SERVICE_CLOSE_TIMEOUT.inWholeMilliseconds,
+						)
+					}
+
+				joinAll(*serviceJobs.toTypedArray(), closeRegistryJob)
+
+				// Cancel any in-flight indexing work still running on the manager scope.
+				scope.coroutineContext.cancelChildren()
+
+				log.info("Indexing services shut down")
+			}
+	}
+
+	/** Returns false when setup was skipped because the previous close has not finished. */
+	private suspend fun initializeServices(): Boolean {
+		if (!awaitPendingClose()) return false
+		log.info("Initializing {} indexing services", services.size)
+
+		val allServices = allServices()
+		for (service in allServices) {
+			try {
+				service.initialize(registry)
+				log.info(
+					"Initialized service: {} (provides: {})",
+					service.id,
+					service.providedKeys.joinToString { it.name },
+				)
+			} catch (e: Exception) {
+				log.error("Failed to initialize service: {}", service.id, e)
+			}
+		}
+
+		// Verify all promised keys are registered
+		for (service in allServices) {
+			for (key in service.providedKeys) {
+				if (!registry.isRegistered(key)) {
+					log.warn(
+						"Service '{}' promised index '{}' but did not register it",
+						service.id,
+						key.name,
+					)
+				}
+			}
+		}
+		return true
+	}
+}

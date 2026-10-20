@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidIDE.
+  ~  Landscape: logo and "Get started" on the left, actions list fills the rest.
+  ~  Uses LinearLayout so the list always gets remaining width (no ConstraintLayout chain issues).
+  -->
+<LinearLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/coordinator"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="?attr/colorSurface"
+  android:orientation="horizontal"
+  android:gravity="top">
+
+  <LinearLayout
+    android:id="@+id/greeting"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:layout_marginStart="24dp"
+    android:layout_marginEnd="32dp"
+    android:minWidth="200dp"
+    android:maxWidth="320dp"
+    android:orientation="vertical"
+    android:gravity="center_horizontal">
+
+    <com.google.android.material.imageview.ShapeableImageView
+      android:id="@+id/main_image"
+      android:layout_width="50dp"
+      android:layout_height="50dp"
+      android:layout_marginBottom="8dp"
+      android:importantForAccessibility="no"
+      android:src="@drawable/cogo_brand_mark" />
+
+    <TextView
+      android:id="@+id/getStarted"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="@string/get_started"
+      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/greetingText"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="4dp"
+      android:clickable="true"
+      android:focusable="true"
+      android:text="@string/msg_create_new_project_greeting"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+    <Space
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
+
+    <TextView
+      android:id="@+id/versionLabel"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginBottom="16dp"
+      android:gravity="center"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:visibility="gone"
+      tools:text="25.47 (C-r-1118-0930)" />
+
+  </LinearLayout>
+
+  <androidx.recyclerview.widget.RecyclerView
+    android:id="@+id/actions"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:clipToPadding="false"
+    android:paddingEnd="8dp"
+    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+    tools:listitem="@layout/layout_main_action_item" />
+
+  <androidx.recyclerview.widget.RecyclerView
+    android:id="@+id/actionsRight"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:clipToPadding="false"
+    android:paddingStart="8dp"
+    android:paddingEnd="24dp"
+    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+    tools:listitem="@layout/layout_main_action_item" />
+
+</LinearLayout>

@@ -1,0 +1,69 @@
+name: Build CodeOnTheGo APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "stage", "acp-agent"]
+
+# Fork layout: the project is at the repository root.
+defaults:
+  run:
+    working-directory: .
+
+jobs:
+  build:
+    name: Build phone APK (arm64-v8a, debug)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # Git cannot store empty folders, so a hand-uploaded copy loses these.
+      # Release variants are configured even for debug builds and need them to exist.
+      - name: Create empty folders git does not keep
+        run: mkdir -p assets/release/common assets/release/v8 compose-preview
+
+      - name: Preflight - verify the project is complete
+        shell: bash
+        run: |
+          missing=0
+          need() { [ -e "$1" ] || { echo "::error::Missing in the repository: $1"; missing=1; }; }
+          for p in settings.gradle.kts build.gradle.kts gradlew gradle/wrapper/gradle-wrapper.jar \
+                   gradle/wrapper/gradle-wrapper.properties app/build.gradle.kts; do need "$p"; done
+
+          # Every module listed in settings.gradle.kts must have its folder.
+          awk '/val allModules/{f=1;next} f&&/^\)/{f=0} f' settings.gradle.kts \
+            | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/"//g; s/^://; s#:#/#g' | sort -u \
+            | while read -r m; do
+                [ "$m" = "compose-preview" ] && continue
+                [ -d "$m" ] || echo "$m"
+              done > /tmp/missing_modules.txt
+          if [ -s /tmp/missing_modules.txt ]; then
+            while read -r m; do echo "::error::Module folder missing: $m"; done < /tmp/missing_modules.txt
+            missing=1
+          fi
+
+          if [ "$missing" = 0 ]; then echo "Preflight OK: project is complete"; else
+            echo "Preflight FAILED: the repository copy is incomplete (see errors above)"; exit 1; fi
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeOnTheGo-arm64-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

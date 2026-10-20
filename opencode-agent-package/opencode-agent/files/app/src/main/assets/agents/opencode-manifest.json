@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/agent-manifest.schema.json",
+  "id": "opencode-core",
+  "name": "OpenCode AI Engine",
+  "version": "1.18.35",
+  "description": "Local code intelligence server engine.",
+  "server_type": "binary",
+  "default_port": 4098,
+  "dynamic_port_allowed": true,
+  "health_check_endpoint": "/health",
+  "capabilities": [
+    "file_read",
+    "file_write",
+    "terminal_exec"
+  ],
+  "distribution": {
+    "linux-aarch64": {
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.35/opencode-linux-arm64.tar.gz",
+      "sha256": "f7f2ba59ee8aa94d388f9696575a32d20e71c2ee48def9f80fc693a60fec6c72",
+      "executable_path": "opencode"
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.35/opencode-linux-x64.tar.gz",
+      "sha256": "c8f888b451f5494a18f858fffb0e0b68f4e4baa9c241761c5f206884f0fa640d",
+      "executable_path": "opencode"
+    }
+  },
+  "spawn_arguments": [
+    "serve",
+    "--port",
+    "${PORT}"
+  ],
+  "environment_variables": {
+    "OPENCODE_DISABLE_TELEMETRY": "1",
+    "OPENCODE_HOST": "127.0.0.1"
+  },
+  "acp_arguments": [
+    "acp"
+  ]
+}

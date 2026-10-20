@@ -1,0 +1,109 @@
+{
+  "${'$'}schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentServerManifest",
+  "description": "JSON schema definition for self-contained, binary-based local agent servers complying with Agent Communication Protocol (ACP).",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "server_type",
+    "default_port",
+    "health_check_endpoint",
+    "capabilities"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the agent (e.g. opencode-core).",
+      "pattern": "^[a-z0-9-_]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable display name for the agent engine."
+    },
+    "version": {
+      "type": "string",
+      "description": "Semver version string of the agent server (e.g. 1.18.31).",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+.*$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Summary of agent intelligence and local features."
+    },
+    "server_type": {
+      "type": "string",
+      "enum": ["binary", "node_module", "docker_container"],
+      "default": "binary",
+      "description": "Execution packaging type for the standalone server."
+    },
+    "default_port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "default": 4098,
+      "description": "Preferred loopback TCP port for HTTP/SSE communication."
+    },
+    "dynamic_port_allowed": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the runner may reassign to an open ephemeral port if default_port is occupied."
+    },
+    "health_check_endpoint": {
+      "type": "string",
+      "default": "/health",
+      "description": "HTTP GET endpoint that returns 200 OK when ready to accept traffic."
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "List of system and IDE host capabilities requested by the agent.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "file_read",
+          "file_write",
+          "terminal_exec",
+          "git_operations"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "distribution": {
+      "type": "object",
+      "description": "Platform-specific binary artifacts and checksums.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["url", "sha256", "executable_path"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "executable_path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "spawn_arguments": {
+      "type": "array",
+      "description": "Command line argument tokens to execute with the binary executable.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "environment_variables": {
+      "type": "object",
+      "description": "Static environment variables to supply when launching the subprocess.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

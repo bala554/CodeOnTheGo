@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- OpenCode-style mark: a square frame with a tall rectangular cut-out. Tinted by BaseEditorAction. -->
+    <path
+        android:pathData="M3,3h18v18h-18z M9,8h6v8h-6z"
+        android:fillColor="#000000"
+        android:fillType="evenOdd" />
+</vector>

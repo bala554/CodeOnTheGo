@@ -1,0 +1,76 @@
+diff --git a/app/src/main/java/com/itsaky/androidide/di/AppModule.kt b/app/src/main/java/com/itsaky/androidide/di/AppModule.kt
+index a9c1a7a..46d85cd 100644
+--- a/app/src/main/java/com/itsaky/androidide/di/AppModule.kt
++++ b/app/src/main/java/com/itsaky/androidide/di/AppModule.kt
+@@ -64,4 +64,31 @@ val coreModule =
+ 		single { GitCredentialsManager(get()) }
+ 
+ 		single { PendingDeepLinkOpen() }
++
++		// OpenCode Agent
++		single { com.itsaky.androidide.agent.opencode.bridge.OpenCodeFileBridge() }
++		single { com.itsaky.androidide.agent.opencode.network.OpenCodeClient(get()) }
++		single<com.itsaky.androidide.agent.opencode.registry.AgentRegistry> {
++			com.itsaky.androidide.agent.opencode.registry.DefaultAgentRegistry(
++				androidApplication(),
++				get(named(APPLICATION_SCOPE))
++			)
++		}
++		single {
++			com.itsaky.androidide.agent.opencode.service.OpenCodeConnectionService(
++				androidApplication(),
++				get(named(APPLICATION_SCOPE))
++			)
++		}
++		single {
++			com.itsaky.androidide.agent.opencode.repository.OpenCodeRepository(
++				androidApplication(),
++				get(),
++				get(),
++				get(named(APPLICATION_SCOPE)),
++				get(),
++				get()
++			)
++		}
++		viewModel { com.itsaky.androidide.agent.opencode.viewmodel.OpenCodeChatViewModel(get()) }
+ 	}
+diff --git a/app/src/main/java/com/itsaky/androidide/utils/EditorActivityActions.kt b/app/src/main/java/com/itsaky/androidide/utils/EditorActivityActions.kt
+index 7bee677..3a47fce 100644
+--- a/app/src/main/java/com/itsaky/androidide/utils/EditorActivityActions.kt
++++ b/app/src/main/java/com/itsaky/androidide/utils/EditorActivityActions.kt
+@@ -46,6 +46,7 @@ import com.itsaky.androidide.actions.etc.ReplaceInProjectAction
+ import com.itsaky.androidide.actions.file.CloseAllFilesAction
+ import com.itsaky.androidide.actions.file.CloseFileAction
+ import com.itsaky.androidide.actions.file.CloseOtherFilesAction
++import com.itsaky.androidide.actions.opencode.OpenCodeToolbarAction
+ import com.itsaky.androidide.actions.file.CreateLinkAction
+ import com.itsaky.androidide.actions.file.FormatCodeAction
+ import com.itsaky.androidide.actions.file.InstallFileAction
+@@ -121,6 +122,7 @@ class EditorActivityActions {
+ 			registry.registerAction(PasteAction(context, order++))
+ 			registry.registerAction(FormatCodeAction(context, order++))
+ 			registry.registerAction(ShowTooltipAction(context, order++))
++			registry.registerAction(OpenCodeToolbarAction(context, order++))
+ 
+ 			// file tab actions
+ 			registry.registerAction(CloseFileAction(context, order++))
+diff --git a/app/src/main/java/com/itsaky/androidide/utils/EditorSidebarActions.kt b/app/src/main/java/com/itsaky/androidide/utils/EditorSidebarActions.kt
+index 5147ced..0b1b652 100644
+--- a/app/src/main/java/com/itsaky/androidide/utils/EditorSidebarActions.kt
++++ b/app/src/main/java/com/itsaky/androidide/utils/EditorSidebarActions.kt
+@@ -48,6 +48,7 @@ import com.itsaky.androidide.actions.sidebar.BuildVariantsSidebarAction
+ import com.itsaky.androidide.actions.sidebar.CloseProjectSidebarAction
+ import com.itsaky.androidide.actions.sidebar.FileTreeSidebarAction
+ import com.itsaky.androidide.actions.sidebar.HelpSideBarAction
++import com.itsaky.androidide.actions.sidebar.OpenCodeSidebarAction
+ import com.itsaky.androidide.actions.sidebar.OutlineSidebarAction
+ import com.itsaky.androidide.actions.sidebar.PreferencesSidebarAction
+ import com.itsaky.androidide.actions.sidebar.TerminalSidebarAction
+@@ -87,6 +88,7 @@ internal object EditorSidebarActions {
+ 		registry.registerAction(PreferencesSidebarAction(context, ++order))
+ 		registry.registerAction(CloseProjectSidebarAction(context, ++order))
+ 		registry.registerAction(HelpSideBarAction(context, ++order))
++		registry.registerAction(OpenCodeSidebarAction(context, ++order))
+ 
+ 		// Set built-in item count (7 items) for sidebar slot management
+ 		SidebarSlotManager.setBuiltInItemCount(order + 1)

@@ -46,6 +46,7 @@ import com.itsaky.androidide.actions.etc.ReplaceInProjectAction
 import com.itsaky.androidide.actions.file.CloseAllFilesAction
 import com.itsaky.androidide.actions.file.CloseFileAction
 import com.itsaky.androidide.actions.file.CloseOtherFilesAction
+import com.itsaky.androidide.actions.opencode.OpenCodeToolbarAction
 import com.itsaky.androidide.actions.file.CreateLinkAction
 import com.itsaky.androidide.actions.file.FormatCodeAction
 import com.itsaky.androidide.actions.file.InstallFileAction
@@ -121,6 +122,7 @@ class EditorActivityActions {
 			registry.registerAction(PasteAction(context, order++))
 			registry.registerAction(FormatCodeAction(context, order++))
 			registry.registerAction(ShowTooltipAction(context, order++))
+			registry.registerAction(OpenCodeToolbarAction(context, order++))
 
 			// file tab actions
 			registry.registerAction(CloseFileAction(context, order++))

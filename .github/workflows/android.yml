@@ -1,4 +1,4 @@
-name: Build CodeOnTheGo APK
+name: Build CodeOnTheGo APK (v8 flavor)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ defaults:
 
 jobs:
   build:
-    name: Build phone APK (arm64-v8a, debug)
+    name: Build phone APK (arm64-v8a, V8 debug)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -30,7 +30,7 @@ jobs:
       # Git cannot store empty folders, so a hand-uploaded copy loses these.
       # Release variants are configured even for debug builds and need them to exist.
       - name: Create empty folders git does not keep
-        run: mkdir -p assets/release/common assets/release/v8 compose-preview
+        run: mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
 
       - name: Preflight - verify the project is complete
         shell: bash
@@ -58,12 +58,12 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Build V8 debug APK
+        run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CodeOnTheGo-arm64-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: CodeOnTheGo-v8-debug
+          path: app/build/outputs/apk/v8/debug/*.apk
           if-no-files-found: error

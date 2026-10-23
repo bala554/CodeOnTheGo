@@ -67,11 +67,20 @@ jobs:
           fi
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
-      - name: Build V8 debug APK
-        run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
+      - name: Build V8 debug APK and capture logs
+        run: |
+          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace > failure-report.txt 2>&1 || {
+            echo "Build failed, check failure-report.txt artifact for details."
+            exit 1
+          }
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug --console=plain --quiet
+      - name: Upload concise failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-failure-report
+          path: failure-report.txt
+          if-no-files-found: error
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

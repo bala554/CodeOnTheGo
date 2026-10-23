@@ -70,6 +70,9 @@ jobs:
       - name: Build V8 debug APK
         run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
 
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug --stacktrace --info --scan
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

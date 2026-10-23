@@ -71,7 +71,7 @@ jobs:
         run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
 
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --stacktrace --info --scan
+        run: ./gradlew assembleDebug --console=plain --quiet
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -27,7 +27,16 @@ jobs:
           cache: gradle
 
       - name: Create empty folders git does not keep
-        run: mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
+        run: |
+          mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
+          # Dynamically create every module directory declared in settings.gradle.kts
+          awk '/^include\(/,/^\)/' settings.gradle.kts \
+            | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/"//g; s/^://; s#:#/#g' \
+            | while read -r m; do
+                [ -z "$m" ] && continue
+                [ "$m" = "compose-preview" ] && continue
+                mkdir -p "$m"
+              done
 
       - name: Preflight - verify the project is complete
         shell: bash

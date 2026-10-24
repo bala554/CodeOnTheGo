@@ -67,12 +67,23 @@ jobs:
           fi
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
-      - name: Build V8 debug APK and capture logs
+      - name: Build V8 debug APK and extract error summary
         run: |
-          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace > failure-report.txt 2>&1 || {
+          # Run build and capture everything to a raw log
+          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace > raw-build.log 2>&1 || build_failed=true
+          
+          # Extract only lines with FAILURE, Exception, or Error, plus a few lines of context around them
+          grep -C 10 -iE "FAILURE:|Exception|Error|FAILED" raw-build.log > failure-report.txt || echo "No explicit error keywords found" > failure-report.txt
+          
+          # If the filtered report is still empty or missing, grab the last 100 lines of the build
+          if [ ! -s failure-report.txt ]; then
+            tail -n 100 raw-build.log > failure-report.txt
+          fi
+
+          if [ "$build_failed" = "true" ]; then
             echo "Build failed, check failure-report.txt artifact for details."
             exit 1
-          }
+          fi
 
       - name: Upload concise failure report
         if: failure()

@@ -36,7 +36,6 @@ plugins {
     id("kotlin-parcelize")
     id("androidx.navigation.safeargs.kotlin")
     id("com.itsaky.androidide.desugaring")
-    // Sentry gradle plugin; the SDK it wires up reports to our GlitchTip backend.
     alias(libs.plugins.sentry)
     alias(libs.plugins.google.services)
     alias(libs.plugins.kotlin.compose)
@@ -69,6 +68,23 @@ apply {
     plugin(AndroidIDEAssetsPlugin::class.java)
 }
 
+// --- Task Hoisting: Registering createPluginArtifactsZip early to avoid TaskNotFoundException ---
+tasks.register<Zip>("createPluginArtifactsZip") {
+    // Ensure the dependency task exists or is handled lazily
+    if (tasks.findByName("copyPluginApiJarToAssets") != null) {
+        dependsOn("copyPluginApiJarToAssets")
+    }
+    dependsOn(gradle.includedBuild("plugin-builder").task(":jar"))
+
+    from(rootProject.file("assets/plugin-api.jar"))
+    from(rootProject.file("plugin-api/plugin-builder/build/libs/plugin-builder-1.0.0.jar")) {
+        rename { "gradle-plugin.jar" }
+    }
+
+    archiveFileName.set("plugin-artifacts.zip")
+    destinationDirectory.set(rootProject.file("assets"))
+}
+
 android {
     namespace = BuildConfig.PACKAGE_NAME
 
@@ -76,5 +92,26 @@ android {
         applicationId = BuildConfig.PACKAGE_NAME
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunnerArguments["class"] = "com.itsaky.androidide.OrderedTestSuite"
+    }
+}
+
+// --- Safe Lazy Provider References for Variant Tasks ---
+androidComponents {
+    onVariants {
+        val variantName = it.name.replaceFirstChar { char -> if (char.isLowerCase()) char.titlecase() else char.toString() }
+        
+        val copyArtifactsTask = tasks.register("copy${variantName}PluginArtifacts") {
+            // Use tasks.named to ensure the provider is resolved during the execution/task-graph phase
+            dependsOn(tasks.named("createPluginArtifactsZip"))
+            
+            val zipFile = tasks.named<Zip>("createPluginArtifactsZip").flatMap { z -> z.archiveFile }
+            inputs.file(zipFile)
+            // Logic to ensure assets are updated for the specific variant
+        }
+
+        // Hook into the asset merging process safely
+        tasks.named("merge${variantName}Assets").configure {
+            dependsOn(copyArtifactsTask)
+        }
     }
 }

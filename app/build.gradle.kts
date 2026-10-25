@@ -30,48 +30,51 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 plugins {
-	id("com.android.application")
-	id("kotlin-android")
-	id("kotlin-kapt")
-	id("kotlin-parcelize")
-	id("androidx.navigation.safeargs.kotlin")
-	id("com.itsaky.androidide.desugaring")
-	// Sentry gradle plugin; the SDK it wires up reports to our GlitchTip backend.
-	alias(libs.plugins.sentry)
-	alias(libs.plugins.google.services)
-	alias(libs.plugins.kotlin.compose)
+    id("com.android.application")
+    id("kotlin-android")
+    id("kotlin-kapt")
+    id("kotlin-parcelize")
+    id("androidx.navigation.safeargs.kotlin")
+    id("com.itsaky.androidide.desugaring")
+    // Sentry gradle plugin; the SDK it wires up reports to our GlitchTip backend.
+    alias(libs.plugins.sentry)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.kotlin.compose)
 }
 
+buildscript {
+    dependencies {
+        classpath(libs.composite.desugaringCore)
+        classpath(libs.org.json)
+    }
+}
+
+evaluationDependsOn(":subprojects:tooling-api-impl")
+evaluationDependsOn(":logsender")
+
 fun propOrEnv(name: String): String =
-	project.findProperty(name) as String?
-		?: System.getenv(name)
-		?: ""
+    project.findProperty(name) as String?
+        ?: System.getenv(name)
+        ?: ""
 
 val props =
-	Properties().apply {
-		val file = rootProject.file("local.properties")
-		if (file.exists()) load(file.inputStream())
-	}
+    Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.exists()) load(file.inputStream())
+    }
 
 val glitchtipDsn = props.getProperty("glitchtipDsn") ?: propOrEnv("GLITCHTIP_DSN")
 
 apply {
-	plugin(AndroidIDEAssetsPlugin::class.java)
-}
-
-buildscript {
-	dependencies {
-		classpath(libs.composite.desugaringCore)
-		classpath(libs.org.json)
-	}
+    plugin(AndroidIDEAssetsPlugin::class.java)
 }
 
 android {
-	namespace = BuildConfig.PACKAGE_NAME
+    namespace = BuildConfig.PACKAGE_NAME
 
-	defaultConfig {
-		applicationId = BuildConfig.PACKAGE_NAME
-		vectorDrawables.useSupportLibrary = true
-		testInstrumentationRunnerArguments["class"] = "com.itsaky.androidide.OrderedTestSuite"
-	}
+    defaultConfig {
+        applicationId = BuildConfig.PACKAGE_NAME
+        vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunnerArguments["class"] = "com.itsaky.androidide.OrderedTestSuite"
+    }
 }

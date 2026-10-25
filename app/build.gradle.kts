@@ -74,3 +74,4 @@ android {
 		vectorDrawables.useSupportLibrary = true
 		testInstrumentationRunnerArguments["class"] = "com.itsaky.androidide.OrderedTestSuite"
 	}
+}

@@ -77,21 +77,43 @@ jobs:
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
       - name: Build V8 debug APK and extract error summary
+        shell: bash
         run: |
-          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace > raw-build.log 2>&1 || build_failed=true
-                     
-          if [ "$build_failed" = "true" ]; then
-            echo "=== GRADLE BUILD FAILED ===" > failure-report.txt
-            # Grab the 50 lines BEFORE "BUILD FAILED" where the actual error stack trace lives
-            grep -B 50 "BUILD FAILED" raw-build.log >> failure-report.txt 2>/dev/null || true
-            if [ ! -s failure-report.txt ] || [ "$(wc -l < failure-report.txt)" -le 3 ]; then
-              tail -n 60 raw-build.log > failure-report.txt
-            fi
-            exit 1
+          set +e
+          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace --console=plain > raw-build.log 2>&1
+          build_exit_code=$?
+          set -e
+
+          if [ "$build_exit_code" -ne 0 ]; then
+            {
+              echo "# Gradle Build Failure"
+              echo ""
+              echo "**Exit code:** $build_exit_code"
+              echo ""
+              echo "## Likely root cause"
+              echo 'text'
+              grep -n -B 3 -A 8 -E \
+                '^\* What went wrong:|Execution failed for task|Could not resolve|Could not find|A problem occurred|^> ' \
+                raw-build.log | head -n 100 || true
+              echo ''
+              echo ""
+              echo "## Final build status"
+              grep -E 'BUILD FAILED|FAILURE: Build failed' raw-build.log | tail -n 5 || true
+            } > failure-report.txt
+
+            # Show the concise report in GitHub's run summary
+            cat failure-report.txt >> "$GITHUB_STEP_SUMMARY"
+
+            # Also print it directly in this step's log
+            cat failure-report.txt
+
+            exit "$build_exit_code"
           fi
 
+          echo "APK build completed successfully."
+
       - name: Upload concise failure report
-        if: failure()
+        if: ${{ failure() && hashFiles('failure-report.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: gradle-failure-report

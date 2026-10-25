@@ -78,15 +78,14 @@ jobs:
 
       - name: Build V8 debug APK and extract error summary
         run: |
-          # Run build and capture output
-          ./gradlew :app:assembleV8Debug --no-daemon > raw-build.log 2>&1 || build_failed=true
+          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace > raw-build.log 2>&1 || build_failed=true
                      
           if [ "$build_failed" = "true" ]; then
             echo "=== GRADLE BUILD FAILED ===" > failure-report.txt
-            # Grab the specific failure block and the last 40 lines where Gradle summarizes the error
-            grep -A 30 "BUILD FAILED" raw-build.log >> failure-report.txt 2>/dev/null || true
-            if [ ! -s failure-report.txt ] || [ "$(wc -l < failure-report.txt)" -le 2 ]; then
-              tail -n 40 raw-build.log > failure-report.txt
+            # Grab the 50 lines BEFORE "BUILD FAILED" where the actual error stack trace lives
+            grep -B 50 "BUILD FAILED" raw-build.log >> failure-report.txt 2>/dev/null || true
+            if [ ! -s failure-report.txt ] || [ "$(wc -l < failure-report.txt)" -le 3 ]; then
+              tail -n 60 raw-build.log > failure-report.txt
             fi
             exit 1
           fi

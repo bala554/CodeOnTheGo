@@ -118,8 +118,8 @@ androidComponents {
                 inputs.file(zipFile)
             }
 
-        // Hook into the asset merging process safely
-        tasks.named("merge${variantName}Assets").configure {
+        // Hook into the asset merging process safely using matching/configureEach as requested
+        tasks.matching { it.name == "merge${variantName}Assets" }.configureEach {
             dependsOn(copyArtifactsTask)
         }
     }

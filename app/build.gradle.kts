@@ -64,13 +64,9 @@ val props =
 
 val glitchtipDsn = props.getProperty("glitchtipDsn") ?: propOrEnv("GLITCHTIP_DSN")
 
-apply {
-    plugin(AndroidIDEAssetsPlugin::class.java)
-}
-
 // --- Task Hoisting: Registering createPluginArtifactsZip early to avoid TaskNotFoundException ---
+// We register this BEFORE applying AndroidIDEAssetsPlugin so the plugin can find the task during its configuration phase.
 tasks.register<Zip>("createPluginArtifactsZip") {
-    // Ensure the dependency task exists or is handled lazily
     if (tasks.findByName("copyPluginApiJarToAssets") != null) {
         dependsOn("copyPluginApiJarToAssets")
     }
@@ -85,6 +81,10 @@ tasks.register<Zip>("createPluginArtifactsZip") {
     destinationDirectory.set(rootProject.file("assets"))
 }
 
+apply {
+    plugin(AndroidIDEAssetsPlugin::class.java)
+}
+
 android {
     namespace = BuildConfig.PACKAGE_NAME
 
@@ -95,7 +95,6 @@ android {
     }
 }
 
-// --- Integrated androidComponents block with robust task registration ---
 androidComponents {
     onVariants { variant ->
         val variantName = variant.name.replaceFirstChar {
@@ -104,7 +103,6 @@ androidComponents {
 
         val taskName = "copy${variantName}PluginArtifacts"
 
-        // Use findByName to check for existing tasks before registering to prevent collisions
         val copyArtifactsTask =
             tasks.findByName(taskName)?.let {
                 tasks.named(taskName)
@@ -118,7 +116,6 @@ androidComponents {
                 inputs.file(zipFile)
             }
 
-        // Hook into the asset merging process safely using matching/configureEach as requested
         tasks.matching { it.name == "merge${variantName}Assets" }.configureEach {
             dependsOn(copyArtifactsTask)
         }

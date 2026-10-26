@@ -95,19 +95,28 @@ android {
     }
 }
 
-// --- Safe Lazy Provider References for Variant Tasks ---
+// --- Integrated androidComponents block with robust task registration ---
 androidComponents {
-    onVariants {
-        val variantName = it.name.replaceFirstChar { char -> if (char.isLowerCase()) char.titlecase() else char.toString() }
-        
-        val copyArtifactsTask = tasks.register("copy${variantName}PluginArtifacts") {
-            // Use tasks.named to ensure the provider is resolved during the execution/task-graph phase
-            dependsOn(tasks.named("createPluginArtifactsZip"))
-            
-            val zipFile = tasks.named<Zip>("createPluginArtifactsZip").flatMap { z -> z.archiveFile }
-            inputs.file(zipFile)
-            // Logic to ensure assets are updated for the specific variant
+    onVariants { variant ->
+        val variantName = variant.name.replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase() else it.toString()
         }
+
+        val taskName = "copy${variantName}PluginArtifacts"
+
+        // Use findByName to check for existing tasks before registering to prevent collisions
+        val copyArtifactsTask =
+            tasks.findByName(taskName)?.let {
+                tasks.named(taskName)
+            } ?: tasks.register(taskName) {
+                dependsOn("createPluginArtifactsZip")
+
+                val zipFile = tasks.named<Zip>(
+                    "createPluginArtifactsZip"
+                ).flatMap { it.archiveFile }
+
+                inputs.file(zipFile)
+            }
 
         // Hook into the asset merging process safely
         tasks.named("merge${variantName}Assets").configure {

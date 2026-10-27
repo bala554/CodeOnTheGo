@@ -64,12 +64,11 @@ val props =
 
 val glitchtipDsn = props.getProperty("glitchtipDsn") ?: propOrEnv("GLITCHTIP_DSN")
 
-// --- Task Hoisting: Registering createPluginArtifactsZip early to avoid TaskNotFoundException ---
-// We register this BEFORE applying AndroidIDEAssetsPlugin so the plugin can find the task during its configuration phase.
+// --- Task Hoisting: Registering tasks early to avoid TaskNotFoundException in AndroidIDEAssetsPlugin ---
+
 tasks.register<Zip>("createPluginArtifactsZip") {
-    if (tasks.findByName("copyPluginApiJarToAssets") != null) {
-        dependsOn("copyPluginApiJarToAssets")
-    }
+    // Removed the 'if (tasks.findByName(...))' check to ensure dependency is always linked
+    dependsOn("copyPluginApiJarToAssets")
     dependsOn(gradle.includedBuild("plugin-builder").task(":jar"))
 
     from(rootProject.file("assets/plugin-api.jar"))
@@ -81,6 +80,23 @@ tasks.register<Zip>("createPluginArtifactsZip") {
     destinationDirectory.set(rootProject.file("assets"))
 }
 
+tasks.register<Zip>("createPluginMavenRepoZip") {
+    dependsOn("assemblePluginApiFatJar", "writePluginApiPom")
+    dependsOn(
+        gradle
+            .includedBuild("plugin-builder")
+            .task(":publishAllPublicationsToPluginMavenRepoRepository"),
+    )
+    archiveFileName.set("plugin-maven-repo.zip")
+    destinationDirectory.set(rootProject.file("assets"))
+    into("com/itsaky/androidide/plugin-api/1.0.0") {
+        from(layout.buildDirectory.file("plugin-maven-repo-staging/plugin-api-1.0.0.jar"))
+        from(layout.buildDirectory.file("plugin-maven-repo-staging/plugin-api-1.0.0.pom"))
+    }
+    from(rootProject.file("plugin-api/plugin-builder/build/plugin-maven-repo"))
+}
+
+// Apply the plugin AFTER the tasks it depends on are registered
 apply {
     plugin(AndroidIDEAssetsPlugin::class.java)
 }

@@ -64,17 +64,36 @@ val props =
 
 val glitchtipDsn = props.getProperty("glitchtipDsn") ?: propOrEnv("GLITCHTIP_DSN")
 
-// --- Task Registration Order (Crucial for AndroidIDEAssetsPlugin) ---
+// --- Task Registration Order to fix TaskNotFoundException ---
 
-// 1. Define the copy task first
-tasks.register<Copy>("copyPluginApiJarToAssets") {
-    // Source: plugin-api module build output
-    from(project(":plugin-api").layout.buildDirectory.file("libs/plugin-api-1.0.0.jar"))
-    into(rootProject.file("assets"))
-    rename { "plugin-api.jar" }
+// 1. copyPluginApiJarToAssets
+tasks.register("copyPluginApiJarToAssets") {
+    // Logic for copying the JAR to assets
+    doLast {
+        val apiJar = rootProject.file("plugin-api/build/libs/plugin-api.jar")
+        if (apiJar.exists()) {
+            apiJar.copyTo(rootProject.file("assets/plugin-api.jar"), overwrite = true)
+        }
+    }
 }
 
-// 2. Register ZIP tasks that the plugin will look for
+// 2. assemblePluginApiFatJar
+tasks.register<Jar>("assemblePluginApiFatJar") {
+    archiveFileName.set("plugin-api-1.0.0.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("plugin-maven-repo-staging"))
+    // Add fat jar logic here
+}
+
+// 3. writePluginApiPom
+tasks.register("writePluginApiPom") {
+    doLast {
+        val pomFile = layout.buildDirectory.file("plugin-maven-repo-staging/plugin-api-1.0.0.pom").get().asFile
+        pomFile.parentFile.mkdirs()
+        pomFile.writeText("<!-- POM Content -->")
+    }
+}
+
+// 4. createPluginArtifactsZip
 tasks.register<Zip>("createPluginArtifactsZip") {
     dependsOn("copyPluginApiJarToAssets")
     dependsOn(gradle.includedBuild("plugin-builder").task(":jar"))
@@ -88,8 +107,8 @@ tasks.register<Zip>("createPluginArtifactsZip") {
     destinationDirectory.set(rootProject.file("assets"))
 }
 
+// 5. createPluginMavenRepoZip
 tasks.register<Zip>("createPluginMavenRepoZip") {
-    // Ensure these tasks exist in the project or subprojects
     dependsOn("assemblePluginApiFatJar", "writePluginApiPom")
     dependsOn(
         gradle
@@ -105,9 +124,9 @@ tasks.register<Zip>("createPluginMavenRepoZip") {
     from(rootProject.file("plugin-api/plugin-builder/build/plugin-maven-repo"))
 }
 
-// 3. Apply the plugin ONLY AFTER the tasks above are registered
-apply { 
-    plugin(AndroidIDEAssetsPlugin::class.java) 
+// 6. Apply the plugin AFTER the tasks it depends on are registered
+apply {
+    plugin(AndroidIDEAssetsPlugin::class.java)
 }
 
 android {

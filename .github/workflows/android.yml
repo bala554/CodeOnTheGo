@@ -1,69 +1,143 @@
-name: Build CodeOnTheGo APK (v8 flavor)
+name: Build Universal APK
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+  pull-requests: read
 
 on:
-  workflow_dispatch:
   push:
-    branches: ["main", "stage", "acp-agent"]
+    branches-ignore:
+      - main
 
-# Fork layout: the project is at the repository root.
-defaults:
-  run:
-    working-directory: .
+  workflow_dispatch: { }
 
 jobs:
-  build:
-    name: Build phone APK (arm64-v8a, V8 debug)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-
+  check_changes:
+    name: Check for meaningful changes
+    runs-on: self-hosted
+    outputs:
+      must_build: ${{ steps.check.outputs.must_build }}
     steps:
-      - name: Checkout
+      - name: Checkout PR branch
         uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
-      # Git cannot store empty folders, so a hand-uploaded copy loses these.
-      # Release variants are configured even for debug builds and need them to exist.
-      - name: Create empty folders git does not keep
-        run: mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
-
-      - name: Preflight - verify the project is complete
-        shell: bash
+      - name: Check if new branch with no meaningful commits
+        id: check
         run: |
-          missing=0
-          need() { [ -e "$1" ] || { echo "::error::Missing in the repository: $1"; missing=1; }; }
-          for p in settings.gradle.kts build.gradle.kts gradlew gradle/wrapper/gradle-wrapper.jar \
-                   gradle/wrapper/gradle-wrapper.properties app/build.gradle.kts; do need "$p"; done
-
-          # Every module listed in settings.gradle.kts must have its folder.
-          awk '/val allModules/{f=1;next} f&&/^\)/{f=0} f' settings.gradle.kts \
-            | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/"//g; s/^://; s#:#/#g' | sort -u \
-            | while read -r m; do
-                [ "$m" = "compose-preview" ] && continue
-                [ -d "$m" ] || echo "$m"
-              done > /tmp/missing_modules.txt
-          if [ -s /tmp/missing_modules.txt ]; then
-            while read -r m; do echo "::error::Module folder missing: $m"; done < /tmp/missing_modules.txt
-            missing=1
+          BRANCH_NAME=$(git branch --show-current)
+          echo "Current branch: $BRANCH_NAME"
+          BRANCH_ONLY_COMMITS=$(git log --oneline origin/stage..HEAD 2/dev/null | wc -l | tr -d ' ' || echo "0")
+          echo "Commits ahead of stage: $BRANCH_ONLY_COMMITS"
+          if [[ "$BRANCH_NAME" != "stage" ]]; then
+            DIFF_COUNT=$(git diff --name-only origin/stage..HEAD | wc -l | tr -d ' ' || echo "0")
+            echo "Files changed from stage: $DIFF_COUNT"
+            if [[ "$DIFF_COUNT" -eq 0 ]]; then
+              echo "::notice::Skipping build for branch identical to stage"
+              echo "must_build=false" >> $GITHUB_OUTPUT
+            else
+              echo "Branch has changes, proceeding with build"
+              echo "must_build=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Stage branch detected, proceeding with build"
+            echo "must_build=true" >> $GITHUB_OUTPUT
           fi
 
-          if [ "$missing" = 0 ]; then echo "Preflight OK: project is complete"; else
-            echo "Preflight FAILED: the repository copy is incomplete (see errors above)"; exit 1; fi
+  validate_branch:
+    name: Validate branch
+    runs-on: self-hosted
+    outputs:
+      branch_type: ${{ steps.classify.outputs.branch_type }}
+    steps:
+      - name: Classify branch
+        id: classify
+        run: |
+          BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+          echo "Branch name: $BRANCH_NAME"
+          if [[ "$BRANCH_NAME" == community/* ]]; then
+            BRANCH_TYPE="community"
+          else
+            BRANCH_TYPE="internal"
+          fi
+          echo "branch_type=$BRANCH_TYPE" >> $GITHUB_OUTPUT
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+  build_apk:
+    name: Build Universal APK
+    runs-on: self-hosted
+    timeout-minutes: 60
+    needs: [ check_changes, validate_branch ]
+    if: needs.check_changes.outputs.must_build == 'true'
+    env:
+      INCLUDE_LLAMA_ASSETS: "false"
 
-      - name: Build V8 debug APK
-        run: ./gradlew :app:assembleV8Debug --no-daemon --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.12.1
         with:
-          name: CodeOnTheGo-v8-debug
-          path: app/build/outputs/apk/v8/debug/*.apk
-          if-no-files-found: error
+          access_token: ${{ github.token }}
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Validate branch name length
+        run: |
+          BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+          BRANCH_LENGTH=${#BRANCH_NAME}
+          if [ $BRANCH_LENGTH -gt 80 ]; then
+            echo "ERROR: Branch name exceeds 80 characters"
+            exit 1
+          fi
+
+      - name: Check if Nix is installed
+        id: check_nix
+        run: |
+          if command -v nix >/dev/null 2>&1; then
+            echo "nix_installed=true" >> $GITHUB_ENV
+          else
+            echo "nix_installed=false" >> $GITHUB_ENV
+          fi
+
+      - name: Install Flox
+        if: env.nix_installed == 'false'
+        uses: flox/install-flox-action@v2
+
+      - name: Verify plugin-api binary compatibility
+        run: |
+          flox activate -d flox/base -- ./gradlew :plugin-api:apiCheck --no-daemon
+
+      - name: Run plugin-api unit tests
+        run: |
+          flox activate -d flox/base -- ./gradlew :plugin-api:testDebugUnitTest --no-daemon
+
+      - name: Run spotlessCheck alongside a compile task
+        run: |
+          flox activate -d flox/base -- ./gradlew :common:compileV8DebugKotlin spotlessCheck --no-daemon
+
+      - name: Install advancecomp (advzip, used by recompressApk)
+        run: |
+          command -v advzip || { sudo apt-get update && sudo apt-get install -y advancecomp; }
+
+      - name: Assemble Universal APK
+        run: |
+          flox activate -d flox/base -- ./gradlew :app:assembleV8Debug --no-daemon
+
+      - name: Find APK file
+        id: find_apk
+        run: |
+          apk_path=$(find app/build/outputs/apk/ -path "*v8*/debug/*.apk" | head -n 1)
+          echo "APK_PATH=$apk_path" >> $GITHUB_OUTPUT
+
+      - name: Verify APK exists
+        run: |
+          if [ ! -f "${{ steps.find_apk.outputs.APK_PATH }}" ]; then
+            echo "ERROR: APK file not found"
+            exit 1
+          fi

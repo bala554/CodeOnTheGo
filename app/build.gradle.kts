@@ -64,10 +64,18 @@ val props =
 
 val glitchtipDsn = props.getProperty("glitchtipDsn") ?: propOrEnv("GLITCHTIP_DSN")
 
-// --- Task Hoisting: Registering tasks early to avoid TaskNotFoundException in AndroidIDEAssetsPlugin ---
+// --- Task Registration Order (Crucial for AndroidIDEAssetsPlugin) ---
 
+// 1. Define the copy task first
+tasks.register<Copy>("copyPluginApiJarToAssets") {
+    // Source: plugin-api module build output
+    from(project(":plugin-api").layout.buildDirectory.file("libs/plugin-api-1.0.0.jar"))
+    into(rootProject.file("assets"))
+    rename { "plugin-api.jar" }
+}
+
+// 2. Register ZIP tasks that the plugin will look for
 tasks.register<Zip>("createPluginArtifactsZip") {
-    // Removed the 'if (tasks.findByName(...))' check to ensure dependency is always linked
     dependsOn("copyPluginApiJarToAssets")
     dependsOn(gradle.includedBuild("plugin-builder").task(":jar"))
 
@@ -81,6 +89,7 @@ tasks.register<Zip>("createPluginArtifactsZip") {
 }
 
 tasks.register<Zip>("createPluginMavenRepoZip") {
+    // Ensure these tasks exist in the project or subprojects
     dependsOn("assemblePluginApiFatJar", "writePluginApiPom")
     dependsOn(
         gradle
@@ -96,9 +105,9 @@ tasks.register<Zip>("createPluginMavenRepoZip") {
     from(rootProject.file("plugin-api/plugin-builder/build/plugin-maven-repo"))
 }
 
-// Apply the plugin AFTER the tasks it depends on are registered
-apply {
-    plugin(AndroidIDEAssetsPlugin::class.java)
+// 3. Apply the plugin ONLY AFTER the tasks above are registered
+apply { 
+    plugin(AndroidIDEAssetsPlugin::class.java) 
 }
 
 android {

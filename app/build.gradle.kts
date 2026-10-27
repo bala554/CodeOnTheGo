@@ -94,30 +94,3 @@ android {
         testInstrumentationRunnerArguments["class"] = "com.itsaky.androidide.OrderedTestSuite"
     }
 }
-
-androidComponents {
-    onVariants { variant ->
-        val variantName = variant.name.replaceFirstChar {
-            if (it.isLowerCase()) it.titlecase() else it.toString()
-        }
-
-        val taskName = "copy${variantName}PluginArtifacts"
-
-        val copyArtifactsTask =
-            tasks.findByName(taskName)?.let {
-                tasks.named(taskName)
-            } ?: tasks.register(taskName) {
-                dependsOn("createPluginArtifactsZip")
-
-                val zipFile = tasks.named<Zip>(
-                    "createPluginArtifactsZip"
-                ).flatMap { it.archiveFile }
-
-                inputs.file(zipFile)
-            }
-
-        tasks.matching { it.name == "merge${variantName}Assets" }.configureEach {
-            dependsOn(copyArtifactsTask)
-        }
-    }
-}

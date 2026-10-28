@@ -86,25 +86,27 @@ jobs:
 
           if [ "$build_exit_code" -ne 0 ]; then
             {
-              echo "# Gradle Build Failure"
+              echo "# ❌ Gradle Build Failure"
               echo ""
-              echo "**Exit code:** $build_exit_code"
+              echo "**Exit code:** \`$build_exit_code\`"
               echo ""
-              echo "## Likely root cause"
+              echo "## 🔍 Likely Root Cause"
               echo 'text'
               grep -n -B 3 -A 8 -E \
                 '^\* What went wrong:|Execution failed for task|Could not resolve|Could not find|A problem occurred|^> ' \
                 raw-build.log | head -n 100 || true
               echo ''
               echo ""
-              echo "## Final build status"
+              echo "## 📋 Final Build Status"
+              echo 'text'
               grep -E 'BUILD FAILED|FAILURE: Build failed' raw-build.log | tail -n 5 || true
+              echo ''
             } > failure-report.txt
 
-            # Show the concise report in GitHub's run summary
+            # This publishes the report directly to the GitHub Actions workflow run summary screen
             cat failure-report.txt >> "$GITHUB_STEP_SUMMARY"
 
-            # Print concise report to the terminal screen
+            # This prints it to the terminal step log
             cat failure-report.txt
 
             echo ""

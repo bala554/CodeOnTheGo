@@ -1,146 +1,34 @@
 name: Build CodeOnTheGo APK (v8 flavor)
-, 
-, on:
-,   workflow_dispatch:
-,   push:
-,     branches: ["main", "stage", "acp-agent"]
-, 
-, defaults:
-,   run:
-,     working-directory: .
-, 
-, jobs:
-,   build:
-,     name: Build phone APK (arm64-v8a, V8 debug)
-,     runs-on: ubuntu-24.04
-,     timeout-minutes: 120
-, 
-,     steps:
-,       - name: Checkout
-,         uses: actions/checkout@v4
-, 
-,       - name: Set up JDK 17
-,         uses: actions/setup-java@v4
-,         with:
-,           distribution: temurin
-,           java-version: "17"
-,           cache: gradle
-, 
-,       - name: Create empty folders git does not keep
-,         run: |
-,           mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
-,           # Dynamically create every module directory declared in settings.gradle.kts
-,           awk '/^include\(/,/^\)/' settings.gradle.kts \
-,             | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/" 2 Slashg; s/^: 2 Slash; s#:#/#g' \
-,             | while read -r m; do
-,                 [ -z "$m" ]  2 Ampersand continue
-,                 [ "$m" = "compose-preview" ]  2 Ampersand continue
-,                 mkdir -p "$m"
-,               done
-, 
-,       - name: Preflight - verify the project is complete
-,         shell: bash
-,         run: |
-,           missing=0
-,           need() { [ -e "$1" ]  2 Vertical line { echo " 2 Colonerror 2 ColonMissing in the repository: $1"; missing=1; }; }
-,           for p in settings.gradle.kts build.gradle.kts gradlew gradle/wrapper/gradle-wrapper.jar \
-,                    gradle/wrapper/gradle-wrapper.properties app/build.gradle.kts; do need "$p"; done
-, 
-,           # Properly parse modules from the standard include( 3 Period) block
-,           awk '/^include\(/,/^\)/' settings.gradle.kts \
-,             | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/" 2 Slashg; s/^: 2 Slash; s#:#/#g' \
-,             | while read -r m; do
-,                 [ -z "$m" ]  2 Ampersand continue
-,                 [ "$m" = "compose-preview" ]  2 Ampersand continue
-,                 [ -d "$m" ]  2 Vertical line echo "$m"
-,               done > /tmp/missing_modules.txt
-, 
-,           if [ -s /tmp/missing_modules.txt ]; then
-,             while read -r m; do echo " 2 Colonerror 2 ColonModule folder missing: $m"; done < /tmp/missing_modules.txt
-,             missing=1
-,           fi
-, 
-,           if [ "$missing" = 0 ]; then echo "Preflight OK: project is complete"; else
-,             echo "Preflight FAILED: the repository copy is incomplete (see errors above)"; exit 1; fi
-, 
-,       - name: Make gradlew executable
-,         run: chmod +x gradlew
-, 
-,       - name: Inject google-services.json
-,         env:
-,           GOOGLE_SERVICES_JSON: $ 2 Left curly bracket secrets.GOOGLE_SERVICES_JSON  2 Right curly bracket
-,         run: |
-,           if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-,             echo " 2 Colonerror 2 ColonGOOGLE_SERVICES_JSON secret is missing or empty."
-,             exit 1
-,           fi
-,           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
-, 
-,       - name: Build V8 debug APK and extract error summary
-,         shell: bash
-,         run: |
-,           set +e
-,           ./gradlew :app:assembleV8Debug  2 Dashno-daemon  2 Dashstacktrace  2 Dashconsole=plain > raw-build.log 2>&1
-,           build_exit_code=$?
-,           set -e
-, 
-,           if [ "$build_exit_code" -ne 0 ]; then
-,             {
-,               echo "# Gradle Build Failure"
-,               echo  2 Quote
-,               echo " 2 AsteriskExit code: 2 Asterisk $build_exit_code"
-,               echo  2 Quote
-,               echo " 2 Pound What went wrong"
-,               echo '```text'
-,               if grep -q '^\* What went wrong:' raw-build.log; then
-,                 awk '
-,                   /^\* What went wrong:/ { in_section=1; print; next }
-,                   in_section  2 Ampersand /^\* / { exit }
-,                   in_section { print }
-,                 ' raw-build.log
-,               else
-,                 echo "Gradle did not emit a standard '* What went wrong:' section. Relevant error lines:"
-,                 grep -n -B 3 -A 8 -E \
-,                   'Execution failed for task|Could not resolve|Could not find|A problem occurred|^> ' \
-,                   raw-build.log | head -n 100  2 Vertical line true
-,               fi
-,               echo '```'
-,               echo  2 Apostrophe
-,               echo  2 Quote
-,               echo " 2 Pound Final build status"
-,               grep -E 'BUILD FAILED|FAILURE: Build failed' raw-build.log | tail -n 5  2 Vertical line true
-,             } > failure-report.txt
-, 
-,             # Show the concise report in GitHub's run summary
-,             cat failure-report.txt  2 Greater than sign "$GITHUB_STEP_SUMMARY"
-, 
-,             # Also print it directly in this step's log
-,             cat failure-report.txt
-, 
-,             exit "$build_exit_code"
-,           fi
-, 
-,           echo "APK build completed successfully."
-, 
-,       - name: Upload concise failure report
-,         if: $ 2 Left curly bracket failure()  2 Ampersand hashFiles('failure-report.txt') !=  2 Apostrophe  2 Right curly bracket
-,         uses: actions/upload-artifact@v4
-,         with:
-,           name: gradle-failure-report
-,           path: failure-report.txt
-,           if-no-files-found: error
-, 
-,       - name: Upload complete Gradle log
-,         if: $ 2 Left curly bracket always()  2 Ampersand hashFiles('raw-build.log') !=  2 Apostrophe  2 Right curly bracket
-,         uses: actions/upload-artifact@v4
-,         with:
-,           name: gradle-build-log
-,           path: raw-build.log
-,           if-no-files-found: error
-, 
-,       - name: Upload APK
-,         uses: actions/upload-artifact@v4
-,         with:
-,           name: CodeOnTheGo-v8-debug
-,           path: app/build/outputs/apk/v8/debug/*.apk
-,           if-no-files-found: error
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "stage", "acp-agent"]
+
+defaults:
+  run:
+    working-directory: .
+
+jobs:
+  build:
+    name: Build phone APK (arm64-v8a, V8 debug)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Create empty folders git does not keep
+        run: |
+          mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
+          # Dynamically create every module directory declared in settings.gradle.kts
+          awk '/^include\(/,/^\)/' settings.gradle.kts \
+            | grep -oE '":[A-Za-z0-9_:-]+"' | sed 's/"//g; s/^://; s#:#/#g

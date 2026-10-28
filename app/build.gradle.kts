@@ -526,9 +526,9 @@ val quickBuildDistLinkedJars =
 		"kotlin-script-runtime-$KOTLIN_VERSION.jar",
 		"kotlin-reflect-$KOTLIN_VERSION.jar",
 		// These three carry their own version rather than KOTLIN_VERSION,
-		// pinned in libs.versions.toml to what the distribution ships so they can be linked from there.
+		// pinned in libs.versions.toml to match the daemon dependency and distribution.
 		"kotlinx-coroutines-core-jvm-${libs.versions.kotlinxCoroutinesCore.get()}.jar",
-		"gson-${libs.versions.quickBuildDaemonGson.get()}.jar",
+		"gson-${libs.google.gson.get().version}.jar",
 		"asm-${libs.ow2.asm.get().version}.jar",
 	)
 

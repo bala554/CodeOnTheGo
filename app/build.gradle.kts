@@ -517,7 +517,7 @@ evaluationDependsOn(":quickbuild:daemon")
 // quickBuildDaemonZip leaves these out and QuickBuildArtifactStager links the distribution's copy
 // in under exactly these names, which is what the daemon jar's manifest Class-Path expects.
 // The daemon's Kotlin tooling is pinned separately from the distribution's KOTLIN_VERSION.
-val quickBuildDaemonKotlinVersion = libs.common.kotlin.get().version.toString()
+val quickBuildDaemonKotlinVersion = libs.versions.kotlin.get()
 val quickBuildDistLinkedJars =
 	listOf(
 		"kotlin-compiler-embeddable-$quickBuildDaemonKotlinVersion.jar",

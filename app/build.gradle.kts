@@ -11,7 +11,6 @@ import org.adfa.constants.GRADLE_API_NAME_JAR_BR
 import org.adfa.constants.GRADLE_API_NAME_JAR_ZIP
 import org.adfa.constants.GRADLE_DISTRIBUTION_ARCHIVE_NAME
 import org.adfa.constants.GRADLE_DISTRIBUTION_NAME
-import org.adfa.constants.KOTLIN_VERSION
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.json.JSONObject
 import java.io.BufferedOutputStream
@@ -517,17 +516,20 @@ evaluationDependsOn(":quickbuild:daemon")
 // own copy, since `gradle-dists/` and `quickbuild/` both sit under <ANDROIDIDE_HOME>.
 // quickBuildDaemonZip leaves these out and QuickBuildArtifactStager links the distribution's copy
 // in under exactly these names, which is what the daemon jar's manifest Class-Path expects.
+// The daemon's Kotlin tooling is pinned separately from the distribution's KOTLIN_VERSION.
+val quickBuildDaemonKotlinVersion = libs.versions.kotlin.get()
 val quickBuildDistLinkedJars =
 	listOf(
-		"kotlin-compiler-embeddable-$KOTLIN_VERSION.jar",
-		"kotlin-stdlib-$KOTLIN_VERSION.jar",
-		"kotlin-build-tools-impl-$KOTLIN_VERSION.jar",
-		"kotlin-daemon-embeddable-$KOTLIN_VERSION.jar",
-		"kotlin-script-runtime-$KOTLIN_VERSION.jar",
-		"kotlin-reflect-$KOTLIN_VERSION.jar",
-		// These three carry their own version rather than KOTLIN_VERSION,
-		// pinned in libs.versions.toml to match the daemon dependency and distribution.
-		"kotlinx-coroutines-core-jvm-${libs.versions.kotlinxCoroutinesCore.get()}.jar",
+		"kotlin-compiler-embeddable-$quickBuildDaemonKotlinVersion.jar",
+		"kotlin-stdlib-$quickBuildDaemonKotlinVersion.jar",
+		"kotlin-build-tools-impl-$quickBuildDaemonKotlinVersion.jar",
+		"kotlin-daemon-embeddable-$quickBuildDaemonKotlinVersion.jar",
+		"kotlin-script-runtime-$quickBuildDaemonKotlinVersion.jar",
+		// kotlin-reflect is a separate transitive dependency of the daemon tooling.
+		"kotlin-reflect-1.6.10.jar",
+		// Coroutines resolves independently from the shared catalog version.
+		"kotlinx-coroutines-core-jvm-1.8.0.jar",
+		// Gson and ASM use their catalog-pinned daemon dependency versions.
 		"gson-${libs.google.gson.get().version}.jar",
 		"asm-${libs.ow2.asm.get().version}.jar",
 	)

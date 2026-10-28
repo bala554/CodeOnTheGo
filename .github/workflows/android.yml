@@ -92,9 +92,8 @@ jobs:
               echo ""
               echo "## 🔍 Likely Root Cause"
               echo 'text'
-              grep -n -B 3 -A 8 -E \
-                '^\* What went wrong:|Execution failed for task|Could not resolve|Could not find|A problem occurred|^> ' \
-                raw-build.log | head -n 100 || true
+              # Grab context around any line containing 'error', 'failed', or standard Gradle failure markers
+              grep -i -C 5 -E 'error:|fail|cannot find|unresolved reference|script compilation' raw-build.log | head -n 120 || true
               echo ''
               echo ""
               echo "## 📋 Final Build Status"

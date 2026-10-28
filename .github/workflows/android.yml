@@ -90,16 +90,23 @@ jobs:
               echo ""
               echo "**Exit code:** \`$build_exit_code\`"
               echo ""
-              echo "## 🔍 Likely Root Cause"
-              echo 'text'
-              # Grab context around any line containing 'error', 'failed', or standard Gradle failure markers
-              grep -i -C 5 -E 'error:|fail|cannot find|unresolved reference|script compilation' raw-build.log | head -n 120 || true
-              echo ''
+              echo '## Exact Gradle error (`What went wrong`)'
+              echo '```text'
+              if grep -q '^\* What went wrong:' raw-build.log; then
+                awk '
+                  /^\* What went wrong:/ { capture=1 }
+                  capture && /^\* (Try|Exception is):/ { exit }
+                  capture { print }
+                ' raw-build.log
+              else
+                grep -n -B 3 -A 12 -E 'Execution failed for task|Could not resolve|Could not find|A problem occurred|^> ' raw-build.log | head -n 120 || tail -n 120 raw-build.log
+              fi
+              echo '```'
               echo ""
-              echo "## 📋 Final Build Status"
-              echo 'text'
+              echo "## Final Build Status"
+              echo '```text'
               grep -E 'BUILD FAILED|FAILURE: Build failed' raw-build.log | tail -n 5 || true
-              echo ''
+              echo '```'
             } > failure-report.txt
 
             # This publishes the report directly to the GitHub Actions workflow run summary screen
@@ -109,11 +116,7 @@ jobs:
             cat failure-report.txt
 
             echo ""
-            echo "=========================================="
-            echo "          FULL RAW BUILD LOG              "
-            echo "=========================================="
-            cat raw-build.log
-            echo "=========================================="
+            echo "Full raw Gradle log will be attached as the gradle-raw-build-log artifact."
 
             exit "$build_exit_code"
           fi
@@ -126,6 +129,14 @@ jobs:
         with:
           name: gradle-failure-report
           path: failure-report.txt
+          if-no-files-found: error
+
+      - name: Upload full Gradle build log
+        if: ${{ failure() && hashFiles('raw-build.log') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-raw-build-log
+          path: raw-build.log
           if-no-files-found: error
 
       - name: Upload APK

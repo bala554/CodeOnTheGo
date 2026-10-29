@@ -1,4 +1,4 @@
-name: Build CodeOnTheGo APK (v8 flavor)
+name: Build CodeOnTheGo APK (v8 release with bundled assets)
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ defaults:
 
 jobs:
   build:
-    name: Build phone APK (arm64-v8a, V8 debug)
+    name: Build phone APK (arm64-v8a, V8 release)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -76,11 +76,11 @@ jobs:
           fi
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
-      - name: Build V8 debug APK and extract error summary
+      - name: Build self-contained V8 release APK and extract error summary
         shell: bash
         run: |
           set +e
-          ./gradlew :app:assembleV8Debug --no-daemon --stacktrace --console=plain > raw-build.log 2>&1
+          ./gradlew :app:assetsDownloadRelease :app:assembleV8Release --no-daemon --stacktrace --console=plain > raw-build.log 2>&1
           build_exit_code=$?
           set -e
 
@@ -121,7 +121,7 @@ jobs:
             exit "$build_exit_code"
           fi
 
-          echo "APK build completed successfully."
+          echo "Self-contained V8 release APK build completed successfully."
 
       - name: Upload concise failure report
         if: ${{ failure() && hashFiles('failure-report.txt') != '' }}
@@ -140,8 +140,20 @@ jobs:
           if-no-files-found: error
 
       - name: Upload APK
+        id: upload-apk
         uses: actions/upload-artifact@v4
         with:
-          name: CodeOnTheGo-v8-debug
-          path: app/build/outputs/apk/v8/debug/*.apk
+          name: CodeOnTheGo-v8-release
+          path: app/build/outputs/apk/v8/release/*.apk
+          compression-level: 0
           if-no-files-found: error
+
+      - name: Add self-contained APK download link to summary
+        env:
+          APK_ARTIFACT_URL: ${{ steps.upload-apk.outputs.artifact-url }}
+        run: |
+          {
+            echo "## Downloads"
+            echo "- [Download the arm64 release APK]($APK_ARTIFACT_URL)"
+            echo "  This release APK contains the setup assets; no external assets-arm64-v8a.zip is required."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -15,5 +15,5 @@ jobs:
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 7       # Clears out anything older than a week
-          keep_minimum_runs: 3 # Guarantees your last 3 runs remain untouched, protecting your latest history
+          retain_days: 2       # Clears out anything older than 48 hours
+          keep_minimum_runs: 3 # Still guarantees your last 3 runs remain untouched

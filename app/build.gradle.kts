@@ -11,6 +11,7 @@ import org.adfa.constants.GRADLE_API_NAME_JAR_BR
 import org.adfa.constants.GRADLE_API_NAME_JAR_ZIP
 import org.adfa.constants.GRADLE_DISTRIBUTION_ARCHIVE_NAME
 import org.adfa.constants.GRADLE_DISTRIBUTION_NAME
+import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.json.JSONObject
 import java.io.BufferedOutputStream
@@ -517,7 +518,13 @@ evaluationDependsOn(":quickbuild:daemon")
 // quickBuildDaemonZip leaves these out and QuickBuildArtifactStager links the distribution's copy
 // in under exactly these names, which is what the daemon jar's manifest Class-Path expects.
 // The daemon's Kotlin tooling is pinned separately from the distribution's KOTLIN_VERSION.
-val quickBuildDaemonKotlinVersion = libs.versions.kotlin.get()
+val quickBuildDaemonKotlinVersion =
+	project.extensions
+		.getByType<VersionCatalogsExtension>()
+		.named("libs")
+		.findVersion("kotlin")
+		.get()
+		.requiredVersion
 val quickBuildDistLinkedJars =
 	listOf(
 		"kotlin-compiler-embeddable-$quickBuildDaemonKotlinVersion.jar",

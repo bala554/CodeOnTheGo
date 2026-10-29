@@ -513,33 +513,10 @@ dependencies {
 evaluationDependsOn(":quickbuild:runtime")
 evaluationDependsOn(":quickbuild:daemon")
 
-// ADFA-4931: jars the daemon loads from the on-device Gradle distribution instead of shipping its
-// own copy, since `gradle-dists/` and `quickbuild/` both sit under <ANDROIDIDE_HOME>.
-// quickBuildDaemonZip leaves these out and QuickBuildArtifactStager links the distribution's copy
-// in under exactly these names, which is what the daemon jar's manifest Class-Path expects.
-// The daemon's Kotlin tooling is pinned separately from the distribution's KOTLIN_VERSION.
-val quickBuildDaemonKotlinVersion =
-	project.extensions
-		.getByType<VersionCatalogsExtension>()
-		.named("libs")
-		.findVersion("kotlin")
-		.get()
-		.requiredVersion
-val quickBuildDistLinkedJars =
-	listOf(
-		"kotlin-compiler-embeddable-$quickBuildDaemonKotlinVersion.jar",
-		"kotlin-stdlib-$quickBuildDaemonKotlinVersion.jar",
-		"kotlin-build-tools-impl-$quickBuildDaemonKotlinVersion.jar",
-		"kotlin-daemon-embeddable-$quickBuildDaemonKotlinVersion.jar",
-		"kotlin-script-runtime-$quickBuildDaemonKotlinVersion.jar",
-		// kotlin-reflect is a separate transitive dependency of the daemon tooling.
-		"kotlin-reflect-1.6.10.jar",
-		// Coroutines resolves independently from the shared catalog version.
-		"kotlinx-coroutines-core-jvm-1.8.0.jar",
-		// Gson and ASM use their catalog-pinned daemon dependency versions.
-		"gson-${libs.google.gson.get().version}.jar",
-		"asm-${libs.ow2.asm.get().version}.jar",
-	)
+// ADFA-4931: link daemon jars into Gradle only when the exact versions match. The daemon's pinned
+// Kotlin, reflect, coroutines, Gson, and ASM versions differ from Gradle 9.6.1's embedded copies,
+// so keep its runtime jars in the daemon zip rather than substituting incompatible classes.
+val quickBuildDistLinkedJars = emptyList<String>()
 
 // A broken link surfaces on device as a NoClassDefFoundError partway into the user's first
 // compile, far from the change that caused it, so check both ends at build time: the daemon must

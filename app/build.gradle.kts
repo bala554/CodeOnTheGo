@@ -25,6 +25,7 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.KeyStore
 import java.security.MessageDigest
 import java.util.Properties
 import java.util.zip.CRC32
@@ -1571,7 +1572,7 @@ fun signApk(apkFile: File) {
 		if (keystoreFile.inputStream().use { it.readNBytes(jksMagic.size).contentEquals(jksMagic) }) {
 			"JKS"
 		} else {
-			java.security.KeyStore.getDefaultType()
+			KeyStore.getDefaultType()
 		}
 	val keystoreType = signingConfig.storeType?.takeIf { it.isNotBlank() } ?: detectedStoreType
 	project.logger.lifecycle("APK keystore type: $keystoreType")

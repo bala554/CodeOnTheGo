@@ -11,7 +11,6 @@ import org.adfa.constants.GRADLE_API_NAME_JAR_BR
 import org.adfa.constants.GRADLE_API_NAME_JAR_ZIP
 import org.adfa.constants.GRADLE_DISTRIBUTION_ARCHIVE_NAME
 import org.adfa.constants.GRADLE_DISTRIBUTION_NAME
-import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.json.JSONObject
 import java.io.BufferedOutputStream
@@ -513,9 +512,8 @@ dependencies {
 evaluationDependsOn(":quickbuild:runtime")
 evaluationDependsOn(":quickbuild:daemon")
 
-// ADFA-4931: link daemon jars into Gradle only when the exact versions match. The daemon's pinned
-// Kotlin, reflect, coroutines, Gson, and ASM versions differ from Gradle 9.6.1's embedded copies,
-// so keep its runtime jars in the daemon zip rather than substituting incompatible classes.
+// ADFA-4931: these daemon dependency versions do not match Gradle 9.6.1's embedded copies, so keep
+// them in the daemon zip rather than substituting incompatible classes.
 val quickBuildDistLinkedJars = emptyList<String>()
 
 // A broken link surfaces on device as a NoClassDefFoundError partway into the user's first

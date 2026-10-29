@@ -26,6 +26,33 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Restore stable Android debug signing key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: codeonthego-android-debug-signing-key-v1
+
+      - name: Ensure Android debug signing key exists
+        id: ensure-debug-key
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias AndroidDebugKey \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Save stable Android debug signing key
+        if: ${{ always() && steps.ensure-debug-key.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: codeonthego-android-debug-signing-key-v1
+
       - name: Create empty folders git does not keep
         run: |
           mkdir -p assets/release/common assets/release/v7 assets/release/v8 compose-preview
@@ -78,6 +105,14 @@ jobs:
 
       - name: Build self-contained V8 release APK and extract error summary
         shell: bash
+        env:
+          IDE_SIGNING_KEY_BIN: ${{ secrets.IDE_SIGNING_KEY_BIN }}
+          IDE_SIGNING_ALIAS: ${{ secrets.IDE_SIGNING_ALIAS }}
+          IDE_SIGNING_STORE_PASS: ${{ secrets.IDE_SIGNING_STORE_PASS }}
+          IDE_SIGNING_KEY_PASS: ${{ secrets.IDE_SIGNING_KEY_PASS }}
+          IDE_SIGNING_URL: ${{ secrets.IDE_SIGNING_URL }}
+          IDE_SIGNING_AUTH_USER: ${{ secrets.IDE_SIGNING_AUTH_USER }}
+          IDE_SIGNING_AUTH_PASS: ${{ secrets.IDE_SIGNING_AUTH_PASS }}
         run: |
           set +e
           ./gradlew :app:assetsDownloadRelease :app:assembleV8Release --no-daemon --stacktrace --console=plain > raw-build.log 2>&1

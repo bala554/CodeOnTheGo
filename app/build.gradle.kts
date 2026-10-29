@@ -1565,26 +1565,45 @@ fun signApk(apkFile: File) {
 
 	project.logger.lifecycle("APK Signer: ${apkSignerPath.absolutePath}")
 
-	ant.withGroovyBuilder {
-		"exec"(
-			"executable" to apkSignerPath.absolutePath,
-			"failonerror" to "true",
-		) {
-			"arg"("value" to "sign")
-			"arg"("value" to "--v3-signing-enabled")
-			"arg"("value" to "true")
-			"arg"("value" to "--v2-signing-enabled")
-			"arg"("value" to "true")
-			"arg"("value" to "--ks")
-			"arg"("value" to keystorePath)
-			"arg"("value" to "--ks-key-alias")
-			"arg"("value" to keyAlias)
-			"arg"("value" to "--ks-pass")
-			"arg"("value" to "pass:$keystorePassword")
-			"arg"("value" to "--key-pass")
-			"arg"("value" to "pass:$keyPassword")
-			"arg"("value" to apkFile.absolutePath)
+	val keystoreFile = File(keystorePath)
+	val jksMagic = byteArrayOf(0xFE.toByte(), 0xED.toByte(), 0xFE.toByte(), 0xED.toByte())
+	val detectedStoreType =
+		if (keystoreFile.inputStream().use { it.readNBytes(jksMagic.size).contentEquals(jksMagic) }) {
+			"JKS"
+		} else {
+			java.security.KeyStore.getDefaultType()
 		}
+	val keystoreType = signingConfig.storeType?.takeIf { it.isNotBlank() } ?: detectedStoreType
+	project.logger.lifecycle("APK keystore type: $keystoreType")
+
+	val signCommand =
+		listOf(
+			apkSignerPath.absolutePath,
+			"sign",
+			"--v3-signing-enabled",
+			"true",
+			"--v2-signing-enabled",
+			"true",
+			"--ks",
+			keystorePath,
+			"--ks-type",
+			keystoreType,
+			"--ks-key-alias",
+			keyAlias,
+			"--ks-pass",
+			"pass:$keystorePassword",
+			"--key-pass",
+			"pass:$keyPassword",
+			apkFile.absolutePath,
+		)
+	val process = ProcessBuilder(signCommand).redirectErrorStream(true).start()
+	val output = process.inputStream.bufferedReader().readText()
+	val exitCode = process.waitFor()
+	if (exitCode != 0) {
+		throw GradleException(
+			"apksigner exited with code $exitCode using keystore type $keystoreType " +
+				"(exists=${keystoreFile.isFile}). Output: ${output.ifBlank { "(no output)" }}",
+		)
 	}
 }
 

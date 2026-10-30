@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="opencode_toolbar_label">OpenCode</string>
+	<string name="opencode_connect_title">Connect to OpenCode Web</string>
+	<string name="opencode_connection_instructions">OpenCode Web must already be running on the computer that holds the project. Start it with:
+		opencode web --hostname 0.0.0.0 --port 4096. Set OPENCODE_SERVER_PASSWORD before exposing the server to your
+		local network, and configure an AI model provider on the OpenCode host. Your browser opens the workspace on that
+		server. CodeOnTheGo does not upload project files or store your OpenCode password. Use HTTPS or a trusted VPN
+		for remote access. HTTP is not encrypted; do not expose the server to the public internet.</string>
+	<string name="opencode_server_url_hint">Server URL (for example, http://192.168.1.20:4096)</string>
+	<string name="opencode_invalid_server_url">Enter an HTTP or HTTPS server URL without embedded credentials, a query, or a fragment.</string>
+	<string name="opencode_save_and_open">Save and open</string>
+	<string name="opencode_no_browser">No browser is available to open this OpenCode server URL.</string>
+</resources>

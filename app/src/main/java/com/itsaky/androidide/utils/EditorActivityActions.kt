@@ -35,6 +35,7 @@ import com.itsaky.androidide.actions.editor.CopyAction
 import com.itsaky.androidide.actions.editor.CutAction
 import com.itsaky.androidide.actions.editor.ExpandSelectionAction
 import com.itsaky.androidide.actions.editor.LongSelectAction
+import com.itsaky.androidide.actions.editor.OpenCodeAction
 import com.itsaky.androidide.actions.editor.PasteAction
 import com.itsaky.androidide.actions.editor.SelectAllAction
 import com.itsaky.androidide.actions.etc.DisconnectLogSendersAction
@@ -89,6 +90,7 @@ class EditorActivityActions {
 
 			// Toolbar actions
 			registry.registerAction(QuickRunAction(context, order++))
+			registry.registerAction(OpenCodeAction(context, order++))
 			// Quick Build (ADFA-4128): next to the Run button; experimental. Available
 			// from API 28 - on 28/29 resource reloads take the degraded addAssetPath
 			// shim (ResourceSwapStrategy in :quickbuild:runtime); 30+ uses ResourcesLoader.

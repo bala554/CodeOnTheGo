@@ -172,6 +172,7 @@ spotless {
 			"subprojects/aaptcompiler/src/*/java/com/android/**/*",
 			"subprojects/builder-model-impl/src/*/java/com/android/**/*",
 			"subprojects/flashbar/**/*",
+			"subprojects/pebble/src/main/java/io/pebbletemplates/**/*",
 			"subprojects/xml-dom/**/*",
 			"termux/**/*",
 		)

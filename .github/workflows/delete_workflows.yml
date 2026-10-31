@@ -2,9 +2,16 @@ name: Auto Delete Old Workflow Runs
 
 on:
   workflow_run:
-    workflows: ["Build Debug APK"]
+    workflows: ["Build CodeOnTheGo APK (v8 release with bundled assets)"]
     types:
       - completed
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   del_runs:
@@ -15,5 +22,5 @@ jobs:
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 2       # Clears out anything older than 48 hours
-          keep_minimum_runs: 3 # Still guarantees your last 3 runs remain untouched
+          retain_days: 2
+          keep_minimum_runs: 3

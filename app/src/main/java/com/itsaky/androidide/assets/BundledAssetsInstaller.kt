@@ -178,7 +178,7 @@ data object BundledAssetsInstaller : BaseAssetsInstaller() {
 		when (entryName) {
 			GRADLE_DISTRIBUTION_ARCHIVE_NAME -> 63399283L
 			ANDROID_SDK_ZIP -> 254814511L
-			DOCUMENTATION_DB -> 297763377L
+			DOCUMENTATION_DB -> 84672512L // v3 / 26.44 raw DB bytes after Brotli decoding
 			LOCAL_MAVEN_REPO_ARCHIVE_ZIP_NAME -> 97485855L
 			AssetsInstallationHelper.BOOTSTRAP_ENTRY_NAME -> 124120151L
 			GRADLE_API_NAME_JAR_ZIP -> 29447748L

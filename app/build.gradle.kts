@@ -1680,13 +1680,13 @@ val releaseAssets =
 		Asset(
 			"assets/release/common/data/common/localMvnRepository.zip.br",
 			"$devAssetsBaseUrl/release/localMvnRepository.zip.br",
-		),
-		Asset(
-			"assets/release/common/database/documentation.db.br",
-			"$devAssetsBaseUrl/release/documentation.db.br",
-		),
-		Asset(
-			"assets/release/v7/data/common/android-sdk.zip.br",
+			),
+			Asset(
+				"assets/release/common/database/documentation.db.br",
+				"https://github.com/bala554/CodeOnTheGo/releases/download/assets-docdb-v3-26.44/documentation.db.br",
+			),
+			Asset(
+				"assets/release/v7/data/common/android-sdk.zip.br",
 			"$devAssetsBaseUrl/release/v7/android-sdk.zip.br",
 		),
 		Asset(

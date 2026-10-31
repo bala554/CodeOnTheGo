@@ -13,14 +13,46 @@ permissions:
   actions: write
   contents: read
 
+concurrency:
+  group: delete-workflow-runs
+  cancel-in-progress: false
+
 jobs:
   del_runs:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v2
+      - name: Delete expired workflow runs and their artifacts
+        uses: actions/github-script@v7
         with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 2
-          keep_minimum_runs: 3
+          github-token: ${{ github.token }}
+          script: |
+            const retentionMs = 2 * 24 * 60 * 60 * 1000;
+            const { owner, repo } = context.repo;
+            const workflows = await github.paginate(
+              github.rest.actions.listRepoWorkflows,
+              { owner, repo, per_page: 100 },
+            );
+
+            let deletedCount = 0;
+            for (const workflow of workflows) {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                { owner, repo, workflow_id: workflow.id, per_page: 100 },
+              );
+              runs.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+              // Keep the newest three runs for each workflow. Never delete queued or active runs.
+              const eligible = runs.slice(3).filter((run) =>
+                run.status === "completed" &&
+                Date.now() - Date.parse(run.created_at) >= retentionMs
+              );
+              core.info(`${workflow.name}: ${runs.length} run(s); ${eligible.length} expired run(s) eligible.`);
+
+              for (const run of eligible) {
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
+                core.info(`Deleted run ${run.id} created ${run.created_at}.`);
+                deletedCount += 1;
+              }
+            }
+
+            core.info(`Deleted ${deletedCount} expired run(s); retained the newest three per workflow and all active runs.`);

@@ -52,11 +52,33 @@ internal object OpenCodeChatDialog {
 		val padding = (16 * activity.resources.displayMetrics.density).toInt()
 		val spacing = (8 * activity.resources.displayMetrics.density).toInt()
 		val sessions = mutableListOf<OpenCodeChatSession>()
+		val providers = mutableListOf<OpenCodeChatProvider>()
+		val models = mutableListOf<OpenCodeChatModel>()
 		val sessionAdapter = ArrayAdapter<String>(activity, android.R.layout.simple_spinner_item).apply {
 			setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
 		}
 		val sessionPicker = Spinner(activity).apply { adapter = sessionAdapter }
 		val newSessionButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_chat_new_session) }
+		val providerAdapter = ArrayAdapter<String>(activity, android.R.layout.simple_spinner_item).apply {
+			setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+		}
+		val providerPicker = Spinner(activity).apply { adapter = providerAdapter; isEnabled = false }
+		val modelAdapter = ArrayAdapter<String>(activity, android.R.layout.simple_spinner_item).apply {
+			setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+		}
+		val modelPicker = Spinner(activity).apply { adapter = modelAdapter; isEnabled = false }
+		val modelStatus = TextView(activity).apply {
+			text = activity.getString(StringsR.string.opencode_chat_model_loading)
+			textSize = 12f
+		}
+		val modelPickerPanel = LinearLayout(activity).apply {
+			orientation = LinearLayout.VERTICAL
+			addView(TextView(activity).apply { text = activity.getString(StringsR.string.opencode_chat_provider_label) })
+			addView(providerPicker)
+			addView(TextView(activity).apply { text = activity.getString(StringsR.string.opencode_chat_model_label) })
+			addView(modelPicker)
+			addView(modelStatus, verticalParams(spacing))
+		}
 		val modeGroup = RadioGroup(activity).apply { orientation = RadioGroup.VERTICAL }
 		val planMode = RadioButton(activity).apply { text = activity.getString(StringsR.string.opencode_chat_planning) }
 		val buildMode = RadioButton(activity).apply { text = activity.getString(StringsR.string.opencode_chat_build) }
@@ -77,6 +99,7 @@ internal object OpenCodeChatDialog {
 		val questionPanel = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
 		val conversation = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL
+			addView(modelPickerPanel)
 			addView(sessionRow)
 			addView(modeGroup, verticalParams(spacing))
 			addView(status, verticalParams(spacing))
@@ -117,10 +140,14 @@ internal object OpenCodeChatDialog {
 			.create()
 
 		var selectedSession: OpenCodeChatSession? = null
+		var selectedModel: OpenCodeChatModel? = null
 		var activeQuestion: OpenCodeQuestionRequest? = null
 		var sending = false
 		var answering = false
 		var suppressSelection = false
+		var suppressProviderSelection = false
+		var suppressModelSelection = false
+		var providerDefaults = emptyMap<String, String>()
 		var pollJob: Job? = null
 		val drafts = mutableMapOf<String, QuestionDraft>()
 		val uiScope = CoroutineScope(
@@ -140,6 +167,69 @@ internal object OpenCodeChatDialog {
 						(child.getChildAt(inner) as? Button)?.isEnabled = enabled
 					}
 				}
+			}
+		}
+
+		fun displayModels(provider: OpenCodeChatProvider, wantedModelId: String?) {
+			models.clear()
+			models.addAll(provider.models)
+			suppressModelSelection = true
+			modelAdapter.clear()
+			modelAdapter.addAll(models.map { it.name })
+			if (models.isEmpty()) {
+				selectedModel = null
+				modelPicker.isEnabled = false
+			} else {
+				val modelIndex = models.indexOfFirst { it.id == wantedModelId }.takeIf { it >= 0 } ?: 0
+				selectedModel = models[modelIndex]
+				modelPicker.isEnabled = models.size > 1
+				modelPicker.setSelection(modelIndex, false)
+			}
+			suppressModelSelection = false
+		}
+
+		fun displayModelCatalog(catalog: OpenCodeModelCatalog) {
+			providerDefaults = catalog.defaultModels
+			providers.clear()
+			providers.addAll(catalog.providers)
+			suppressProviderSelection = true
+			providerAdapter.clear()
+			if (providers.isEmpty()) {
+				selectedModel = null
+				providerPicker.isEnabled = false
+				modelPicker.isEnabled = false
+				modelAdapter.clear()
+				modelStatus.text = activity.getString(StringsR.string.opencode_chat_model_none)
+				suppressProviderSelection = false
+				return
+			}
+			val selectedProvider = providers.firstOrNull { it.id in providerDefaults } ?: providers.first()
+			val providerIndex = providers.indexOf(selectedProvider)
+			providerAdapter.addAll(providers.map { it.name })
+			providerPicker.isEnabled = providers.size > 1
+			providerPicker.setSelection(providerIndex, false)
+			displayModels(selectedProvider, providerDefaults[selectedProvider.id])
+			suppressProviderSelection = false
+			val modelCount = providers.sumOf { it.models.size }
+			modelStatus.text = activity.getString(
+				StringsR.string.opencode_chat_model_count,
+				providers.size,
+				modelCount,
+			)
+		}
+
+		providerPicker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+			override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+			override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+				if (suppressProviderSelection) return
+				val provider = providers.getOrNull(position) ?: return
+				displayModels(provider, providerDefaults[provider.id])
+			}
+		}
+		modelPicker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+			override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+			override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+				if (!suppressModelSelection) selectedModel = models.getOrNull(position)
 			}
 		}
 
@@ -415,13 +505,14 @@ internal object OpenCodeChatDialog {
 			val text = composer.text.toString().trim()
 			if (text.isEmpty() || sending) return@setOnClickListener
 			val agent = if (planMode.isChecked) "plan" else "build"
+			val model = selectedModel
 			composer.text.clear()
 			sending = true
 			sendButton.isEnabled = false
 			setStatus(activity.getString(StringsR.string.opencode_chat_sending))
 			uiScope.launch {
 				try {
-					val items = client.sendMessage(session.id, text, agent)
+					val items = client.sendMessage(session.id, text, agent, model)
 					if (selectedSession?.id == session.id) {
 						renderMessages(items)
 						setStatus(activity.getString(StringsR.string.opencode_chat_ready))
@@ -450,6 +541,15 @@ internal object OpenCodeChatDialog {
 			)
 			configureDialogImeResize(dialog.window)
 			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).text = activity.getString(StringsR.string.opencode_chat_close)
+			uiScope.launch {
+				try {
+					displayModelCatalog(client.listModelCatalog())
+					} catch (cancelled: CancellationException) {
+						throw cancelled
+					} catch (_: Exception) {
+						if (dialog.isShowing) modelStatus.text = activity.getString(StringsR.string.opencode_chat_model_load_error)
+				}
+			}
 			pollJob = uiScope.launch {
 				try {
 					val recentSessions = client.listSessions()

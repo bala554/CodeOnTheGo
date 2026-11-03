@@ -23,6 +23,24 @@ internal data class OpenCodeChatSession(
 	val updatedAt: Long,
 )
 
+internal data class OpenCodeChatModel(
+	val providerId: String,
+	val providerName: String,
+	val id: String,
+	val name: String,
+)
+
+internal data class OpenCodeChatProvider(
+	val id: String,
+	val name: String,
+	val models: List<OpenCodeChatModel>,
+)
+
+internal data class OpenCodeModelCatalog(
+	val providers: List<OpenCodeChatProvider>,
+	val defaultModels: Map<String, String>,
+)
+
 internal data class OpenCodeChatMessage(
 	val role: String,
 	val text: String,
@@ -50,6 +68,12 @@ internal data class OpenCodeQuestionRequest(
 internal class OpenCodeChatClient(
 	private val baseUrl: String = "http://127.0.0.1:4098",
 ) {
+	suspend fun listModelCatalog(): OpenCodeModelCatalog = withContext(Dispatchers.IO) {
+		val payload = request("GET", "/provider") as? JSONObject
+			?: throw IOException("OpenCode returned an invalid provider response")
+		parseOpenCodeModelCatalog(payload)
+	}
+
 	suspend fun listSessions(limit: Int = 30): List<OpenCodeChatSession> = withContext(Dispatchers.IO) {
 		val payload = request("GET", "/session?limit=$limit")
 		val items = payload as? JSONArray ?: throw IOException("OpenCode returned an invalid sessions response")
@@ -115,10 +139,20 @@ internal class OpenCodeChatClient(
 		}
 	}
 
-	suspend fun sendMessage(sessionId: String, text: String, agent: String): List<OpenCodeChatMessage> = withContext(Dispatchers.IO) {
+	suspend fun sendMessage(
+		sessionId: String,
+		text: String,
+		agent: String,
+		model: OpenCodeChatModel? = null,
+	): List<OpenCodeChatMessage> = withContext(Dispatchers.IO) {
 		val body = JSONObject()
 			.put("agent", agent)
 			.put("parts", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+			.apply {
+				model?.let {
+					put("model", JSONObject().put("providerID", it.providerId).put("modelID", it.id))
+				}
+			}
 		request(
 			method = "POST",
 			path = "/session/${pathSegment(sessionId)}/message",
@@ -230,4 +264,59 @@ internal class OpenCodeChatClient(
 		const val DEFAULT_TIMEOUT_MS = 15_000
 		const val MESSAGE_TIMEOUT_MS = 10 * 60 * 1_000
 	}
+}
+
+internal fun parseOpenCodeModelCatalog(payload: JSONObject): OpenCodeModelCatalog {
+	val providerItems = payload.optJSONArray("all") ?: payload.optJSONArray("providers") ?: JSONArray()
+	val connectedItems = payload.optJSONArray("connected")
+	val connected = connectedItems?.let { items ->
+		buildSet {
+			for (index in 0 until items.length()) items.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+		}
+	}
+	val defaults = mutableMapOf<String, String>()
+	payload.optJSONObject("default")?.let { values ->
+		val providerId = values.optString("providerID")
+		val modelId = values.optString("modelID")
+		if (providerId.isNotBlank() && modelId.isNotBlank()) defaults[providerId] = modelId
+		for (key in values.keys()) {
+			val value = values.optString(key)
+			if (value.isNotBlank()) defaults.putIfAbsent(key, value)
+		}
+	}
+
+	val providers = buildList {
+		for (index in 0 until providerItems.length()) {
+			val item = providerItems.optJSONObject(index) ?: continue
+			val providerId = item.optString("id").takeIf { it.isNotBlank() } ?: continue
+			if (connected != null && providerId !in connected) continue
+			val modelItems = item.optJSONObject("models") ?: continue
+			val models = buildList {
+				for (modelId in modelItems.keys()) {
+					val model = modelItems.optJSONObject(modelId) ?: continue
+					if (model.has("enabled") && !model.optBoolean("enabled", true)) continue
+					val id = model.optString("id").takeIf { it.isNotBlank() } ?: modelId
+					val providerName = item.optString("name").ifBlank { providerId }
+					add(
+						OpenCodeChatModel(
+							providerId = providerId,
+							providerName = providerName,
+							id = id,
+							name = model.optString("name").ifBlank { id },
+						),
+					)
+				}
+			}.sortedBy { it.name.lowercase() }
+			if (models.isNotEmpty()) {
+				add(
+					OpenCodeChatProvider(
+						id = providerId,
+						name = item.optString("name").ifBlank { providerId },
+						models = models,
+					),
+				)
+			}
+		}
+	}
+	return OpenCodeModelCatalog(providers.sortedBy { it.name.lowercase() }, defaults)
 }

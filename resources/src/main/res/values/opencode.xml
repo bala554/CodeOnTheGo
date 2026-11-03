@@ -31,6 +31,12 @@
 		<string name="opencode_chat_open">Open local chat</string>
 		<string name="opencode_chat_title">OpenCode Chat</string>
 		<string name="opencode_chat_new_session">New session</string>
+		<string name="opencode_chat_provider_label">Provider</string>
+		<string name="opencode_chat_model_label">Model</string>
+		<string name="opencode_chat_model_loading">Loading connected providers and models…</string>
+		<string name="opencode_chat_model_none">No connected providers with available models. The OpenCode default will be used if configured.</string>
+		<string name="opencode_chat_model_load_error">Could not load providers. The OpenCode default will be used if configured.</string>
+		<string name="opencode_chat_model_count">%1$d providers · %2$d models available</string>
 		<string name="opencode_chat_planning">Planning · read-only</string>
 		<string name="opencode_chat_build">Build</string>
 		<string name="opencode_chat_connecting">Connecting to the local OpenCode server…</string>

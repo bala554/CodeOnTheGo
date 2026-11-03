@@ -406,7 +406,7 @@ internal class OpenCodeTarExtractor(
         GzipCompressorInputStream(BufferedInputStream(archive.inputStream()), true).use { gzip ->
             TarArchiveInputStream(gzip).use { tar ->
                 while (true) {
-                    val entry = tar.getNextTarEntry() ?: break
+                    val entry = tar.getNextEntry() ?: break
                     entryCount++
                     if (entryCount > MAX_TAR_ENTRIES) throw IOException("The runtime archive contains too many entries")
                     val path = normalizeTarPath(entry.name)

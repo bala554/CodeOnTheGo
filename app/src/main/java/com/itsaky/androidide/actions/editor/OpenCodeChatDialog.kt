@@ -12,6 +12,7 @@ import android.content.DialogInterface
 import android.graphics.Typeface
 import android.text.InputType
 import android.view.View
+import android.view.Window
 import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -39,6 +40,12 @@ internal object OpenCodeChatDialog {
 		val selected: MutableList<MutableSet<String>>,
 		val custom: MutableList<String>,
 	)
+
+	// Keep the chat composer visible on Android versions using legacy soft-input resizing.
+	@Suppress("DEPRECATION")
+	private fun configureDialogImeResize(window: Window?) {
+		window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+	}
 
 	fun show(activity: EditorHandlerActivity) {
 		val client = OpenCodeChatClient()
@@ -367,7 +374,7 @@ internal object OpenCodeChatDialog {
 			}
 			suppressSelection = false
 			selectedSession?.let { session ->
-				if (session.id != priorId || priorId == null) loadConversation(session)
+				if (priorId == null || session.id != priorId) loadConversation(session)
 			}
 		}
 
@@ -441,7 +448,7 @@ internal object OpenCodeChatDialog {
 				LinearLayout.LayoutParams.MATCH_PARENT,
 				LinearLayout.LayoutParams.MATCH_PARENT,
 			)
-			dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+			configureDialogImeResize(dialog.window)
 			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).text = activity.getString(StringsR.string.opencode_chat_close)
 			pollJob = uiScope.launch {
 				try {

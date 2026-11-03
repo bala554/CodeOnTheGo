@@ -175,7 +175,7 @@ internal object OpenCodeRuntimeDialog {
 		}
 
 		fun runServerAction(
-			busyLabel: String,
+			busyLabel: Int,
 			action: suspend () -> OpenCodeServerStatus,
 		) {
 			if (busy) return

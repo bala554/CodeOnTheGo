@@ -6,6 +6,9 @@ internal data class OpenCodeRuntimeDashboardControls(
 	val canStop: Boolean,
 ) {
 	companion object {
+		fun canOpenChat(status: OpenCodeServerStatus): Boolean =
+			status is OpenCodeServerStatus.Running && status.managedByThisApp
+
 		fun forStatus(
 			status: OpenCodeServerStatus,
 			supportedDevice: Boolean,

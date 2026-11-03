@@ -5,6 +5,13 @@ import org.junit.Test
 
 class OpenCodeRuntimeDashboardControlsTest {
 	@Test
+	fun `only opens local chat when the server is managed by this app`() {
+		assertThat(OpenCodeRuntimeDashboardControls.canOpenChat(OpenCodeServerStatus.Stopped)).isFalse()
+		assertThat(OpenCodeRuntimeDashboardControls.canOpenChat(OpenCodeServerStatus.Running("1.18.31", true))).isTrue()
+		assertThat(OpenCodeRuntimeDashboardControls.canOpenChat(OpenCodeServerStatus.Running("1.18.31", false))).isFalse()
+	}
+
+	@Test
 	fun `offers install before setup and start after installation`() {
 		assertThat(
 			OpenCodeRuntimeDashboardControls.forStatus(OpenCodeServerStatus.NotInstalled, supportedDevice = true),

@@ -111,6 +111,14 @@ class OpenCodeRuntimeInstallerTest {
         assertThat(command).contains("--hostname 127.0.0.1 --port 4098")
         assertThat(command).contains("-b /dev -b /proc -b /sys")
         assertThat(command).contains("/etc/resolv.conf")
+        assertThat(command).contains("OPENCODE_CONFIG_CONTENT=")
+        assertThat(command).contains("\"plan\":{\"permission\":{\"*\":\"deny\"")
+        assertThat(command).contains("\"edit\":\"deny\"")
+        assertThat(command).contains("\"write\":\"deny\"")
+        assertThat(command).contains("\"patch\":\"deny\"")
+        assertThat(command).contains("\"bash\":\"deny\"")
+        assertThat(command).contains("\"task\":\"deny\"")
+        assertThat(command).contains("\"build\":{\"permission\":{\"read\":\"allow\",\"edit\":\"allow\",\"write\":\"allow\",\"patch\":\"allow\"}")
         assertThat(command).doesNotContain("--hostname 0.0.0.0")
     }
 

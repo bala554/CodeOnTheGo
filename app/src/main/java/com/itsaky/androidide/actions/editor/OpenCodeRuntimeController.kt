@@ -212,6 +212,8 @@ internal class OpenCodeRuntimeController(
         const val PORT = OpenCodeRuntimeInstaller.PORT
         const val HEALTH_URL = "http://127.0.0.1:4098/global/health"
         const val PACKAGE_INSTALL_COMMAND = "pkg update -y && pkg install -y proot libtalloc"
+        // Enforce Planning read-only at the tool layer; tools not explicitly allowed stay denied.
+        internal const val CHAT_MODE_CONFIG = """{"agent":{"plan":{"permission":{"*":"deny","read":"allow","glob":"allow","grep":"allow","question":"allow","edit":"deny","write":"deny","patch":"deny","bash":"deny","task":"deny","external_directory":"deny"}},"build":{"permission":{"read":"allow","edit":"allow","write":"allow","patch":"allow"}}}}"""
         private const val OWNER_ID = "builtin.opencode.local"
         private const val SESSION_LABEL = "OpenCode Server"
         private const val PACKAGE_SESSION_LABEL = "OpenCode Runtime Setup"
@@ -254,6 +256,7 @@ internal class OpenCodeRuntimeController(
                 append(" -w ").append(guestWorkingDirectory.shellQuote())
                 append(" /usr/bin/env -u LD_LIBRARY_PATH -u OPENCODE_SERVER_PASSWORD -u OPENCODE_SERVER_USERNAME")
                 append(" HOME=/root PATH=/usr/local/bin:/usr/bin:/bin TMPDIR=/tmp TERM=xterm-256color")
+                append(" OPENCODE_CONFIG_CONTENT=").append(CHAT_MODE_CONFIG.shellQuote())
                 append(" /usr/local/bin/opencode serve --hostname ").append(HOST).append(" --port ").append(PORT)
             }
         }

@@ -66,6 +66,7 @@ internal object OpenCodeRuntimeDialog {
 		val startButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_start) }
 		val stopButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_stop) }
 		val refreshButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_refresh) }
+		val chatButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_chat_open) }
 
 		val content = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL
@@ -80,6 +81,7 @@ internal object OpenCodeRuntimeDialog {
 			addView(startButton)
 			addView(stopButton)
 			addView(refreshButton)
+			addView(chatButton)
 		}
 		val dialog = MaterialAlertDialogBuilder(activity)
 			.setTitle(StringsR.string.opencode_local_title)
@@ -100,6 +102,7 @@ internal object OpenCodeRuntimeDialog {
 			startButton.isEnabled = false
 			stopButton.isEnabled = false
 			refreshButton.isEnabled = false
+			chatButton.isEnabled = false
 			dialog.setCancelable(false)
 			dialog.setCanceledOnTouchOutside(false)
 			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = false
@@ -154,6 +157,7 @@ internal object OpenCodeRuntimeDialog {
 			startButton.isEnabled = controls.canStart
 			stopButton.isEnabled = controls.canStop
 			refreshButton.isEnabled = true
+			chatButton.isEnabled = OpenCodeRuntimeDashboardControls.canOpenChat(serverStatus)
 		}
 
 		fun inspectStatus() {
@@ -229,6 +233,7 @@ internal object OpenCodeRuntimeDialog {
 			runServerAction(StringsR.string.opencode_local_stopping) { controller.stop() }
 		}
 		refreshButton.setOnClickListener { inspectStatus() }
+		chatButton.setOnClickListener { OpenCodeChatDialog.show(activity) }
 		dialog.setOnShowListener {
 			dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
 				dialog.dismiss()

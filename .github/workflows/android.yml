@@ -3,7 +3,7 @@ name: Build CodeOnTheGo APK (v8 release with bundled assets)
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "stage", "acp-agent"]
+    branches: ["main", "stage", "acp-agent", "feature/opencode-runtime"]
 
 defaults:
   run:

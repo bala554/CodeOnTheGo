@@ -1,18 +1,18 @@
 /*
  *  This file is part of AndroidIDE.
  *
- *  AndroidIDE is free software: you can redistribute it and/or modify
+ *  AndroidIDE is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
  *
- *  AndroidIDE is distributed in the hope that it will be useful,
+ *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.itsaky.androidide.actions.editor
 
@@ -32,10 +32,13 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.itsaky.androidide.R
 import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.EditorActivityAction
+import com.itsaky.androidide.activities.editor.EditorHandlerActivity
 import com.itsaky.androidide.idetooltips.TooltipTag
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.resources.R as StringsR
+import java.io.File
 import java.net.URI
 import java.util.Locale
-import com.itsaky.androidide.resources.R as StringsR
 
 class OpenCodeAction(
 	context: Context,
@@ -59,45 +62,54 @@ class OpenCodeAction(
 
 	override suspend fun execAction(data: ActionData): Boolean {
 		val activity = data.getActivity() ?: return false
+		val projectDirectory = runCatching {
+			IProjectManager.getInstance().projectDirPath
+				.takeIf { it.isNotBlank() }
+				?.let(::File)
+				?.takeIf { it.isDirectory }
+		}.getOrNull()
+		OpenCodeRuntimeDialog.show(activity, projectDirectory) {
+			showRemoteConnectionDialog(activity)
+		}
+		return true
+	}
+
+	private fun showRemoteConnectionDialog(activity: EditorHandlerActivity) {
 		val preferences = activity.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-		val serverUrl =
-			EditText(activity).apply {
-				inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-				setSingleLine(true)
-				hint = activity.getString(StringsR.string.opencode_server_url_hint)
-				setText(preferences.getString(SERVER_URL_KEY, "").orEmpty())
-			}
-		val instructions =
-			TextView(activity).apply {
-				text = activity.getString(StringsR.string.opencode_connection_instructions)
-			}
-		val content =
-			LinearLayout(activity).apply {
-				orientation = LinearLayout.VERTICAL
-				val horizontalPadding = (24 * resources.displayMetrics.density).toInt()
-				setPadding(horizontalPadding, 0, horizontalPadding, 0)
-				addView(
-					instructions,
-					LinearLayout.LayoutParams(
-						LinearLayout.LayoutParams.MATCH_PARENT,
-						LinearLayout.LayoutParams.WRAP_CONTENT,
-					),
-				)
-				addView(
-					serverUrl,
-					LinearLayout.LayoutParams(
-						LinearLayout.LayoutParams.MATCH_PARENT,
-						LinearLayout.LayoutParams.WRAP_CONTENT,
-					),
-				)
-			}
-		val dialog =
-			MaterialAlertDialogBuilder(activity)
-				.setTitle(StringsR.string.opencode_connect_title)
-				.setView(ScrollView(activity).apply { addView(content) })
-				.setNegativeButton(android.R.string.cancel, null)
-				.setPositiveButton(StringsR.string.opencode_save_and_open, null)
-				.create()
+		val serverUrl = EditText(activity).apply {
+			inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+			setSingleLine(true)
+			hint = activity.getString(StringsR.string.opencode_server_url_hint)
+			setText(preferences.getString(SERVER_URL_KEY, "").orEmpty())
+		}
+		val instructions = TextView(activity).apply {
+			text = activity.getString(StringsR.string.opencode_connection_instructions)
+		}
+		val content = LinearLayout(activity).apply {
+			orientation = LinearLayout.VERTICAL
+			val horizontalPadding = (24 * resources.displayMetrics.density).toInt()
+			setPadding(horizontalPadding, 0, horizontalPadding, 0)
+			addView(
+				instructions,
+				LinearLayout.LayoutParams(
+					LinearLayout.LayoutParams.MATCH_PARENT,
+					LinearLayout.LayoutParams.WRAP_CONTENT,
+				),
+			)
+			addView(
+				serverUrl,
+				LinearLayout.LayoutParams(
+					LinearLayout.LayoutParams.MATCH_PARENT,
+					LinearLayout.LayoutParams.WRAP_CONTENT,
+				),
+			)
+		}
+		val dialog = MaterialAlertDialogBuilder(activity)
+			.setTitle(StringsR.string.opencode_connect_title)
+			.setView(ScrollView(activity).apply { addView(content) })
+			.setNegativeButton(android.R.string.cancel, null)
+			.setPositiveButton(StringsR.string.opencode_save_and_open, null)
+			.create()
 
 		dialog.setOnShowListener {
 			dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
@@ -118,7 +130,6 @@ class OpenCodeAction(
 			}
 		}
 		dialog.show()
-		return true
 	}
 }
 

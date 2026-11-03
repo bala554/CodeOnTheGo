@@ -4,11 +4,31 @@
 	<string name="opencode_connect_title">Connect to OpenCode Web</string>
 	<string name="opencode_connection_instructions">OpenCode Web must already be running on the computer that holds the project. Start it with:
 		opencode web --hostname 0.0.0.0 --port 4096. Set OPENCODE_SERVER_PASSWORD before exposing the server to your
-		local network, and configure an AI model provider on the OpenCode host. Your browser opens the workspace on that
-		server. CodeOnTheGo does not upload project files or store your OpenCode password. Use HTTPS or a trusted VPN
-		for remote access. HTTP is not encrypted; do not expose the server to the public internet.</string>
-	<string name="opencode_server_url_hint">Server URL (for example, http://192.168.1.20:4096)</string>
-	<string name="opencode_invalid_server_url">Enter an HTTP or HTTPS server URL without embedded credentials, a query, or a fragment.</string>
-	<string name="opencode_save_and_open">Save and open</string>
-	<string name="opencode_no_browser">No browser is available to open this OpenCode server URL.</string>
+			local network, and configure an AI model provider on the OpenCode host. Your browser opens the workspace on that
+			server. CodeOnTheGo does not upload project files or store your OpenCode password. Use HTTPS or a trusted VPN
+			for remote access. HTTP is not encrypted; do not expose the server to the public internet.</string>
+		<string name="opencode_server_url_hint">Server URL (for example, http://192.168.1.20:4096)</string>
+		<string name="opencode_local_title">OpenCode Local Runtime</string>
+		<string name="opencode_local_checking">Checking local runtime and server status...</string>
+		<string name="opencode_local_endpoint">Local health check: %1$s. The server is bound to loopback only.</string>
+		<string name="opencode_local_install_guidance">Installation may open a visible Terminal session to prepare required packages. Keep that session visible while it runs.</string>
+		<string name="opencode_local_not_installed">OpenCode %1$s is not installed. Install the verified runtime to this app.</string>
+		<string name="opencode_local_stopped">OpenCode %1$s is installed. The local server is stopped.</string>
+		<string name="opencode_local_starting">Starting OpenCode in the visible CodeOnTheGo Terminal...</string>
+		<string name="opencode_local_stopping">Stopping the OpenCode Terminal session...</string>
+		<string name="opencode_local_installing">Preparing the runtime installation...</string>
+		<string name="opencode_local_download_progress">%1$s download: %2$d%%</string>
+		<string name="opencode_local_installed">OpenCode %1$s was installed and verified. The server is stopped.</string>
+		<string name="opencode_local_running_managed">OpenCode %1$s is running locally in a visible CodeOnTheGo Terminal session.</string>
+		<string name="opencode_local_running_unmanaged">OpenCode %1$s responds locally, but this app did not start it. Stop it from its Terminal session.</string>
+		<string name="opencode_local_version_conflict">A different OpenCode server version (%1$s) is using the local port. Stop it from its Terminal before starting this runtime.</string>
+		<string name="opencode_local_error">Runtime issue: %1$s</string>
+		<string name="opencode_local_install">Install runtime</string>
+		<string name="opencode_local_start">Start local server</string>
+		<string name="opencode_local_stop">Stop local server</string>
+		<string name="opencode_local_refresh">Refresh status</string>
+		<string name="opencode_remote_connect">Connect to remote OpenCode Web</string>
+		<string name="opencode_invalid_server_url">Enter an HTTP or HTTPS server URL without embedded credentials, a query, or a fragment.</string>
+		<string name="opencode_save_and_open">Save and open</string>
+		<string name="opencode_no_browser">No browser is available to open this OpenCode server URL.</string>
 </resources>

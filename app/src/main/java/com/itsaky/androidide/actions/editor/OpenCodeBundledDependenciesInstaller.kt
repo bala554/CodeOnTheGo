@@ -177,8 +177,9 @@ internal class OpenCodeBundledDependenciesInstaller(
         ensureSafeDestination(File(libraryDirectory, TALLOC_LIBRARY))
         for (alias in TALLOC_ALIASES) {
             val link = File(libraryDirectory, alias)
-            if (link.exists() && !link.delete()) throw IOException("Could not replace a libtalloc alias")
-            runCatching { Os.unlink(link.absolutePath) }
+            if (link.exists() || isSymbolicLink(link)) {
+                if (!link.delete()) throw IOException("Could not replace a libtalloc alias")
+            }
             Os.symlink(TALLOC_LIBRARY, link.absolutePath)
         }
     }

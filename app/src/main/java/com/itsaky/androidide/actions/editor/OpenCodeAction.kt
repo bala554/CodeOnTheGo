@@ -68,9 +68,7 @@ class OpenCodeAction(
 				?.let(::File)
 				?.takeIf { it.isDirectory }
 		}.getOrNull()
-		OpenCodeRuntimeDialog.show(activity, projectDirectory) {
-			showRemoteConnectionDialog(activity)
-		}
+		OpenCodeRuntimeDialog.show(activity, projectDirectory)
 		return true
 	}
 

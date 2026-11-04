@@ -45,9 +45,11 @@ internal class OpenCodeRuntimeInstaller(
     private val openDependencyAsset: (String) -> InputStream = {
         throw IOException("The bundled OpenCode dependency asset is unavailable")
     },
+    private val supportedDeviceOverride: Boolean? = null,
+    private val runtimeVersionProbe: ((File) -> String)? = null,
 ) {
     val isSupportedDevice: Boolean
-        get() = Build.SUPPORTED_64_BIT_ABIS.contains(TARGET_ABI)
+        get() = supportedDeviceOverride ?: Build.SUPPORTED_64_BIT_ABIS.contains(TARGET_ABI)
 
     fun runtimeDirectory(): File = File(File(prefix, RUNTIME_PATH), VERSION)
 
@@ -58,21 +60,44 @@ internal class OpenCodeRuntimeInstaller(
     suspend fun installedVersion(): String? = withContext(Dispatchers.IO) {
         if (!isSupportedDevice || !hasRuntimeDependencies()) return@withContext null
         val directory = runtimeDirectory()
+        val rootfs = File(directory, "rootfs")
         val marker = File(directory, INSTALL_MARKER)
-        val binary = File(directory, "rootfs/usr/local/bin/opencode")
-        if (!marker.isFile || !binary.canExecute()) return@withContext null
+        val binary = File(rootfs, "usr/local/bin/opencode")
+        if (!directory.isDirectory || !rootfs.isDirectory || !binary.isFile || !binary.canExecute()) {
+            return@withContext null
+        }
         runCatching {
-            val json = JSONObject(marker.readText())
-            if (json.optString("version") != VERSION ||
-                json.optString("opencode_sha256") != OPENCODE_SHA256 ||
-                json.optString("debian_layer_sha256") != DEBIAN_LAYER_SHA256
-            ) {
+            verifyArm64Elf(binary, "opencode")
+            val output = (runtimeVersionProbe?.invoke(directory) ?: runVersion(directory)).trim()
+            if (!isExpectedVersion(output)) {
                 null
             } else {
-                verifyArm64Elf(binary, "opencode")
+                // Older or interrupted installs may contain a valid runtime without its marker.
+                if (!markerMatches(marker)) runCatching { writeInstallMarker(directory) }
                 VERSION
             }
         }.getOrNull()
+    }
+
+    private fun markerMatches(marker: File): Boolean = runCatching {
+        if (!marker.isFile) return@runCatching false
+        val json = JSONObject(marker.readText())
+        json.optString("version") == VERSION &&
+            json.optString("opencode_sha256") == OPENCODE_SHA256 &&
+            json.optString("debian_layer_sha256") == DEBIAN_LAYER_SHA256 &&
+            json.optString("debian_manifest") == DEBIAN_ARM64_MANIFEST_DIGEST
+    }.getOrDefault(false)
+
+    private fun writeInstallMarker(directory: File) {
+        File(directory, INSTALL_MARKER).writeText(
+            JSONObject()
+                .put("version", VERSION)
+                .put("opencode_sha256", OPENCODE_SHA256)
+                .put("debian_layer_sha256", DEBIAN_LAYER_SHA256)
+                .put("debian_manifest", DEBIAN_ARM64_MANIFEST_DIGEST)
+                .put("installed_at_ms", System.currentTimeMillis())
+                .toString(),
+        )
     }
 
     suspend fun install(
@@ -220,15 +245,7 @@ internal class OpenCodeRuntimeInstaller(
             if (!VERSION_TOKEN_REGEX.containsMatchIn(versionOutput)) {
                 throw IOException("The installed binary did not report OpenCode $VERSION")
             }
-            File(stage, INSTALL_MARKER).writeText(
-                JSONObject()
-                    .put("version", VERSION)
-                    .put("opencode_sha256", OPENCODE_SHA256)
-                    .put("debian_layer_sha256", DEBIAN_LAYER_SHA256)
-                    .put("debian_manifest", DEBIAN_ARM64_MANIFEST_DIGEST)
-                    .put("installed_at_ms", System.currentTimeMillis())
-                    .toString(),
-            )
+            writeInstallMarker(stage)
             val finalDirectory = runtimeDirectory()
             if (finalDirectory.exists()) {
                 if (!finalDirectory.renameTo(backup)) throw IOException("Could not replace the incomplete OpenCode runtime")

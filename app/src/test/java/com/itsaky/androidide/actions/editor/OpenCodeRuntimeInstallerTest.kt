@@ -10,6 +10,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 
 class OpenCodeRuntimeInstallerTest {
     @get:Rule
@@ -62,6 +64,44 @@ class OpenCodeRuntimeInstallerTest {
         }
 
         assertThat(OpenCodeBundledDependenciesInstaller.hasRuntimeDependencies(prefix)).isTrue()
+    }
+
+    @Test
+    fun `recognizes a valid runtime whose install marker is missing`() = runBlocking {
+        val prefix = preparedPrefix("runtime-without-marker")
+        val runtime = preparedRuntime(prefix)
+        val installer = OpenCodeRuntimeInstaller(
+            prefix = prefix,
+            cacheDirectory = temporaryFolder.newFolder("runtime-cache-without-marker"),
+            supportedDeviceOverride = true,
+            runtimeVersionProbe = { "OpenCode ${OpenCodeRuntimeInstaller.VERSION}" },
+        )
+
+        assertThat(installer.installedVersion()).isEqualTo(OpenCodeRuntimeInstaller.VERSION)
+        assertThat(File(runtime, "installed.json").readText())
+            .contains("\"version\":\"${OpenCodeRuntimeInstaller.VERSION}\"")
+    }
+
+    @Test
+    fun `does not trust a matching marker when the installed binary reports another version`() = runBlocking {
+        val prefix = preparedPrefix("runtime-with-wrong-version")
+        val runtime = preparedRuntime(prefix)
+        File(runtime, "installed.json").writeText(
+            JSONObject()
+                .put("version", OpenCodeRuntimeInstaller.VERSION)
+                .put("opencode_sha256", OpenCodeRuntimeInstaller.OPENCODE_SHA256)
+                .put("debian_layer_sha256", OpenCodeRuntimeInstaller.DEBIAN_LAYER_SHA256)
+                .put("debian_manifest", OpenCodeRuntimeInstaller.DEBIAN_ARM64_MANIFEST_DIGEST)
+                .toString(),
+        )
+        val installer = OpenCodeRuntimeInstaller(
+            prefix = prefix,
+            cacheDirectory = temporaryFolder.newFolder("runtime-cache-wrong-version"),
+            supportedDeviceOverride = true,
+            runtimeVersionProbe = { "OpenCode 9.9.9" },
+        )
+
+        assertThat(installer.installedVersion()).isNull()
     }
 
     @Test
@@ -173,6 +213,36 @@ class OpenCodeRuntimeInstallerTest {
             }
         }
         return archive
+    }
+
+    private fun preparedPrefix(name: String): File {
+        val prefix = temporaryFolder.newFolder(name)
+        listOf(
+            "bin/proot",
+            "libexec/proot/loader",
+            "libexec/proot/loader32",
+            "lib/libtalloc.so.2.4.3",
+            "lib/libtalloc.so.2",
+            "lib/libtalloc.so",
+        ).forEach { relativePath ->
+            File(prefix, relativePath).apply {
+                parentFile?.mkdirs()
+                writeText("test")
+                setExecutable(true, false)
+            }
+        }
+        return prefix
+    }
+
+    private fun preparedRuntime(prefix: File): File {
+        val runtime = File(prefix, "${OpenCodeRuntimeInstaller.RUNTIME_PATH}/${OpenCodeRuntimeInstaller.VERSION}")
+        val binary = File(runtime, "rootfs/usr/local/bin/opencode").apply {
+            parentFile?.mkdirs()
+            writeBytes(arm64ElfHeader())
+            setExecutable(true, false)
+        }
+        assertThat(binary.canExecute()).isTrue()
+        return runtime
     }
 
     private fun arm64ElfHeader(): ByteArray = ByteArray(20).apply {

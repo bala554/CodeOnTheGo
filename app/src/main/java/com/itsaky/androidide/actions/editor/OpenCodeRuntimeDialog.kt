@@ -39,7 +39,6 @@ internal object OpenCodeRuntimeDialog {
 	fun show(
 		activity: EditorHandlerActivity,
 			projectDirectory: File?,
-			onConnectRemote: () -> Unit,
 		) {
 			val installer = OpenCodeRuntimeInstaller(
 				cacheDirectory = activity.cacheDir,
@@ -89,12 +88,11 @@ internal object OpenCodeRuntimeDialog {
 			addView(chatButton)
 			addView(logsButton)
 		}
-		val dialog = MaterialAlertDialogBuilder(activity)
-			.setTitle(StringsR.string.opencode_local_title)
-			.setView(ScrollView(activity).apply { addView(content) })
-			.setNegativeButton(android.R.string.cancel, null)
-			.setNeutralButton(StringsR.string.opencode_remote_connect, null)
-			.create()
+			val dialog = MaterialAlertDialogBuilder(activity)
+				.setTitle(StringsR.string.opencode_local_title)
+				.setView(ScrollView(activity).apply { addView(content) })
+				.setNegativeButton(android.R.string.cancel, null)
+				.create()
 		var busy = false
 
 		fun setBusy(label: String) {
@@ -104,17 +102,16 @@ internal object OpenCodeRuntimeDialog {
 			progress.visibility = View.VISIBLE
 			progress.isIndeterminate = true
 			progressLabel.visibility = View.GONE
-			installButton.isEnabled = false
-			startButton.isEnabled = false
-			stopButton.isEnabled = false
-				refreshButton.isEnabled = false
-				chatButton.isEnabled = false
-				logsButton.isEnabled = false
-			dialog.setCancelable(false)
-			dialog.setCanceledOnTouchOutside(false)
-			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = false
-			dialog.getButton(DialogInterface.BUTTON_NEUTRAL).isEnabled = false
-		}
+		installButton.isEnabled = false
+		startButton.isEnabled = false
+		stopButton.isEnabled = false
+			refreshButton.isEnabled = false
+			chatButton.isEnabled = false
+			logsButton.isEnabled = false
+		dialog.setCancelable(false)
+		dialog.setCanceledOnTouchOutside(false)
+		dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = false
+	}
 
 		fun render(serverStatus: OpenCodeServerStatus) {
 			if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return
@@ -122,7 +119,6 @@ internal object OpenCodeRuntimeDialog {
 			dialog.setCancelable(true)
 			dialog.setCanceledOnTouchOutside(true)
 			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = true
-			dialog.getButton(DialogInterface.BUTTON_NEUTRAL).isEnabled = true
 			progress.visibility = View.GONE
 			progressLabel.visibility = View.GONE
 			message.visibility = View.GONE
@@ -159,8 +155,9 @@ internal object OpenCodeRuntimeDialog {
 					status.text = activity.getString(StringsR.string.opencode_local_error, serverStatus.message)
 				}
 			}
-			val controls = OpenCodeRuntimeDashboardControls.forStatus(serverStatus, installer.isSupportedDevice)
-			installButton.isEnabled = controls.canInstall
+				val controls = OpenCodeRuntimeDashboardControls.forStatus(serverStatus, installer.isSupportedDevice)
+				installButton.visibility = if (controls.showInstall) View.VISIBLE else View.GONE
+				installButton.isEnabled = controls.canInstall
 			startButton.isEnabled = controls.canStart
 			stopButton.isEnabled = controls.canStop
 				refreshButton.isEnabled = true
@@ -275,12 +272,6 @@ internal object OpenCodeRuntimeDialog {
 					}
 				}
 			}
-		dialog.setOnShowListener {
-			dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
-				dialog.dismiss()
-				onConnectRemote()
-			}
-		}
 		dialog.show()
 		inspectStatus()
 	}

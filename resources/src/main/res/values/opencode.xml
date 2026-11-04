@@ -20,7 +20,7 @@
 		<string name="opencode_local_download_progress">%1$s: %2$d%%</string>
 		<string name="opencode_local_installed">OpenCode %1$s was installed and verified. The server is stopped.</string>
 		<string name="opencode_local_running_managed">OpenCode %1$s is running locally as a background service.</string>
-		<string name="opencode_local_running_unmanaged">OpenCode %1$s responds locally, but this app did not start it. Stop it before starting here; only this app's server uses secured Planning mode.</string>
+		<string name="opencode_local_running_unmanaged">OpenCode %1$s responds locally, but this app did not start it. Stop it before starting here; only this app’s server uses secured Planning mode.</string>
 		<string name="opencode_local_version_conflict">A different OpenCode server version (%1$s) is using the local port. Stop that server before starting this runtime.</string>
 		<string name="opencode_local_error">Runtime issue: %1$s</string>
 		<string name="opencode_local_install">Install runtime</string>

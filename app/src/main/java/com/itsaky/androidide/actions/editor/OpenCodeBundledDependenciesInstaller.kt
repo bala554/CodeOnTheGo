@@ -98,13 +98,13 @@ internal class OpenCodeBundledDependenciesInstaller(
         var dataArchiveFound = false
         ArArchiveInputStream(BufferedInputStream(debFile.inputStream())).use { ar ->
             while (true) {
-                val member = ar.nextArEntry ?: break
+                val member = ar.nextEntry ?: break
                 if (member.name != "data.tar.xz") continue
                 dataArchiveFound = true
                 XZCompressorInputStream(ar).use { xz ->
                     TarArchiveInputStream(xz).use { tar ->
                         while (true) {
-                            val entry = tar.nextTarEntry ?: break
+                            val entry = tar.nextEntry ?: break
                             val normalized = OpenCodeTarExtractor().normalizeTarPath(entry.name)
                             if (normalized.isEmpty()) continue
                             if (entry.size < 0L || entry.size > MAX_EXPANDED_BYTES - expandedBytes) {

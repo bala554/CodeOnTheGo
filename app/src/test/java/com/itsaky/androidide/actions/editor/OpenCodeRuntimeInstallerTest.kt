@@ -10,6 +10,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.URL
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
@@ -31,6 +32,58 @@ class OpenCodeRuntimeInstallerTest {
             .isEqualTo("f791e47cf52abf7b364878f2141547e3781072e437f599f6632849d88fca8ca4")
         assertThat(OpenCodeRuntimeInstaller.DEBIAN_ARM64_MANIFEST_DIGEST)
             .isEqualTo("sha256:7ccb8b5b60c7654f5b795d94ee7d751cd0811500803f0b09cefcd555e755a55a")
+    }
+
+    @Test
+    fun `allows only the exact HTTPS Docker blob redirect host`() {
+        val trustedHosts = OpenCodeRuntimeInstaller.DEBIAN_DOWNLOAD_HOSTS
+
+        assertThat(
+            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                URL("https://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
+                trustedHosts,
+            ),
+        ).isTrue()
+        assertThat(
+            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                URL("https://s3.dualstack.us-east-1.amazonaws.com/blob"),
+                trustedHosts,
+            ),
+        ).isFalse()
+        assertThat(
+            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                URL("http://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
+                trustedHosts,
+            ),
+        ).isFalse()
+        assertThat(
+            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                URL("https://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com:444/blob"),
+                trustedHosts,
+            ),
+        ).isFalse()
+        assertThat(
+            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                URL("https://user@docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
+                trustedHosts,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun `does not forward credentials across a download redirect origin`() {
+        val registryUrl = URL("https://registry-1.docker.io/v2/library/debian/blobs/latest")
+        val signedBlobUrl = URL("https://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob")
+        val headers = mapOf(
+            "Authorization" to "Bearer test-token",
+            "Cookie" to "session=test",
+            "User-Agent" to "CodeOnTheGo-OpenCode-Runtime",
+        )
+
+        assertThat(OpenCodeRuntimeInstaller.headersForRedirect(registryUrl, signedBlobUrl, headers))
+            .containsExactly("User-Agent", "CodeOnTheGo-OpenCode-Runtime")
+        assertThat(OpenCodeRuntimeInstaller.headersForRedirect(registryUrl, registryUrl, headers))
+            .isEqualTo(headers)
     }
 
     @Test

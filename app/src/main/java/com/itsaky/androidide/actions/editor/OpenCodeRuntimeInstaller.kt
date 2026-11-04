@@ -170,50 +170,79 @@ internal class OpenCodeRuntimeInstaller(
         headers: Map<String, String>,
         onProgress: suspend (OpenCodeInstallProgress) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        val connection = openHttpsConnection(url)
-        try {
-            connection.setRequestProperty("User-Agent", USER_AGENT)
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("$label download failed (HTTP $responseCode)")
-            }
-            val finalUrl = connection.url
-            if (finalUrl.protocol != "https" || finalUrl.host.lowercase(Locale.ROOT) !in allowedHosts) {
+        var currentUrl = url
+        var requestHeaders = headers
+        var redirectCount = 0
+        while (true) {
+            if (!isAllowedDownloadUrl(currentUrl, allowedHosts)) {
                 throw IOException("$label download redirected to an untrusted HTTPS host")
             }
-            val digest = MessageDigest.getInstance("SHA-256")
-            var downloaded = 0L
-            var lastPercent = -1
-            BufferedInputStream(connection.inputStream).use { input ->
-                FileOutputStream(destination).use { fileOutput ->
-                    BufferedOutputStream(fileOutput).use { output ->
-                    val buffer = ByteArray(BUFFER_SIZE)
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        downloaded += count
-                        if (downloaded > expectedSize) throw IOException("$label download exceeded its pinned size")
-                        digest.update(buffer, 0, count)
-                        output.write(buffer, 0, count)
-                        val percent = ((downloaded * 100L) / expectedSize).toInt()
-                        if (percent != lastPercent) {
-                            lastPercent = percent
-                            onProgress(OpenCodeInstallProgress(downloaded, expectedSize, label))
+            val connection = openHttpsConnection(currentUrl)
+            var redirectedUrl: URL? = null
+            try {
+                connection.setRequestProperty("User-Agent", USER_AGENT)
+                requestHeaders.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+                val responseCode = connection.responseCode
+                if (responseCode in DOWNLOAD_REDIRECT_CODES) {
+                    if (redirectCount >= MAX_DOWNLOAD_REDIRECTS) {
+                        throw IOException("$label download exceeded the redirect limit")
+                    }
+                    val location = connection.getHeaderField("Location")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: throw IOException("$label download returned an incomplete redirect")
+                    val nextUrl = try {
+                        URL(currentUrl, location)
+                    } catch (error: java.net.MalformedURLException) {
+                        throw IOException("$label download returned an invalid redirect", error)
+                    }
+                    if (!isAllowedDownloadUrl(nextUrl, allowedHosts)) {
+                        throw IOException("$label download redirected to an untrusted HTTPS host")
+                    }
+                    requestHeaders = headersForRedirect(currentUrl, nextUrl, requestHeaders)
+                    redirectedUrl = nextUrl
+                } else {
+                    if (responseCode != HttpURLConnection.HTTP_OK) {
+                        throw IOException("$label download failed (HTTP $responseCode)")
+                    }
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var downloaded = 0L
+                    var lastPercent = -1
+                    BufferedInputStream(connection.inputStream).use { input ->
+                        FileOutputStream(destination).use { fileOutput ->
+                            BufferedOutputStream(fileOutput).use { output ->
+                                val buffer = ByteArray(BUFFER_SIZE)
+                                while (true) {
+                                    coroutineContext.ensureActive()
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    downloaded += count
+                                    if (downloaded > expectedSize) {
+                                        throw IOException("$label download exceeded its pinned size")
+                                    }
+                                    digest.update(buffer, 0, count)
+                                    output.write(buffer, 0, count)
+                                    val percent = ((downloaded * 100L) / expectedSize).toInt()
+                                    if (percent != lastPercent) {
+                                        lastPercent = percent
+                                        onProgress(OpenCodeInstallProgress(downloaded, expectedSize, label))
+                                    }
+                                }
+                                output.flush()
+                                fileOutput.fd.sync()
+                            }
                         }
                     }
-                    output.flush()
-                    fileOutput.fd.sync()
+                    if (downloaded != expectedSize) throw IOException("$label download was incomplete")
+                    if (!digest.digest().toHex().equals(expectedSha256, ignoreCase = true)) {
+                        throw IOException("$label SHA-256 verification failed")
                     }
+                    return@withContext
                 }
+            } finally {
+                connection.disconnect()
             }
-            if (downloaded != expectedSize) throw IOException("$label download was incomplete")
-            if (!digest.digest().toHex().equals(expectedSha256, ignoreCase = true)) {
-                throw IOException("$label SHA-256 verification failed")
-            }
-        } finally {
-            connection.disconnect()
+            currentUrl = redirectedUrl ?: throw IOException("$label download returned an incomplete redirect")
+            redirectCount++
         }
     }
 
@@ -333,7 +362,7 @@ internal class OpenCodeRuntimeInstaller(
         return (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECTION_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
-            instanceFollowRedirects = true
+            instanceFollowRedirects = false
         }
     }
 
@@ -393,14 +422,56 @@ internal class OpenCodeRuntimeInstaller(
         private const val MINIMUM_FREE_BYTES = 512L * 1024L * 1024L
         private const val MAX_ROOTFS_BYTES = 1_500L * 1024L * 1024L
         private const val MAX_OPENCODE_BYTES = 400L * 1024L * 1024L
+        private const val MAX_DOWNLOAD_REDIRECTS = 5
         private const val ELF_MACHINE_AARCH64 = 183
         private val VERSION_TOKEN_REGEX = Regex("(?<![0-9])${Regex.escape(VERSION)}(?![0-9])")
+        private val DOWNLOAD_REDIRECT_CODES = setOf(
+            HttpURLConnection.HTTP_MOVED_PERM,
+            HttpURLConnection.HTTP_MOVED_TEMP,
+            HttpURLConnection.HTTP_SEE_OTHER,
+            307,
+            308,
+        )
+        private val SENSITIVE_REDIRECT_HEADERS = setOf("authorization", "proxy-authorization", "cookie")
         private val OPENCODE_DOWNLOAD_HOSTS = setOf(
             "github.com",
             "release-assets.githubusercontent.com",
             "objects.githubusercontent.com",
         )
-        private val DEBIAN_DOWNLOAD_HOSTS = setOf("registry-1.docker.io", "production.cloudflare.docker.com")
+        internal val DEBIAN_DOWNLOAD_HOSTS = setOf(
+            "registry-1.docker.io",
+            "production.cloudflare.docker.com",
+            "docker-images-prod.s3.dualstack.us-east-1.amazonaws.com",
+        )
+
+        internal fun isAllowedDownloadUrl(url: URL, allowedHosts: Set<String>): Boolean {
+            val uri = runCatching { url.toURI() }.getOrNull() ?: return false
+            val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+            return uri.scheme.equals("https", ignoreCase = true) &&
+                host in allowedHosts &&
+                (uri.port == -1 || uri.port == 443) &&
+                uri.rawUserInfo == null
+        }
+
+        internal fun headersForRedirect(
+            from: URL,
+            to: URL,
+            headers: Map<String, String>,
+        ): Map<String, String> {
+            val fromUri = runCatching { from.toURI() }.getOrNull() ?: return emptyMap()
+            val toUri = runCatching { to.toURI() }.getOrNull() ?: return emptyMap()
+            val sameOrigin = fromUri.scheme.equals(toUri.scheme, ignoreCase = true) &&
+                fromUri.host.equals(toUri.host, ignoreCase = true) &&
+                effectivePort(fromUri) == effectivePort(toUri)
+            return if (sameOrigin) {
+                headers
+            } else {
+                headers.filterKeys { it.lowercase(Locale.ROOT) !in SENSITIVE_REDIRECT_HEADERS }
+            }
+        }
+
+        private fun effectivePort(uri: java.net.URI): Int =
+            uri.port.takeIf { it >= 0 } ?: if (uri.scheme.equals("https", ignoreCase = true)) 443 else 80
     }
 }
 

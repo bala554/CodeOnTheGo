@@ -30,7 +30,7 @@ internal sealed interface OpenCodeServerStatus {
     data class Failed(val message: String) : OpenCodeServerStatus
 }
 
-/** Installs dependencies visibly, then keeps the local server in a user-visible Terminal session. */
+/** Installs the runtime inside the app, then keeps the local server in a user-visible Terminal session. */
 internal class OpenCodeRuntimeController(
     private val installer: OpenCodeRuntimeInstaller,
     private val launcherFactory: (Activity) -> TerminalSessionLauncher = { activity ->
@@ -54,14 +54,12 @@ internal class OpenCodeRuntimeController(
     }
 
     suspend fun install(
-        activity: Activity,
         onProgress: suspend (OpenCodeInstallProgress) -> Unit = {},
     ): OpenCodeInstallation = OpenCodeTerminalSession.mutex.withLock {
         if (!installer.isSupportedDevice) throw IOException("The OpenCode runtime requires a 64-bit ARM Android device")
         if (OpenCodeTerminalSession.command?.result?.isCompleted == false || healthProbe() != null) {
             throw IOException("Stop the local OpenCode server before reinstalling its runtime")
         }
-        ensureTerminalPackages(activity)
         installer.install(onProgress)
     }
 
@@ -174,52 +172,16 @@ internal class OpenCodeRuntimeController(
         }
     }
 
-    private suspend fun ensureTerminalPackages(activity: Activity) {
-        if (installer.hasRuntimeDependencies()) return
-        val launcher = launcherFactory(activity)
-        val launched = launcher.launch(PACKAGE_INSTALL_COMMAND, null, OWNER_ID, PACKAGE_SESSION_LABEL)
-        try {
-            val started = withTimeoutOrNull(SESSION_START_TIMEOUT_MS) {
-                select<Boolean> {
-                    launched.started.onAwait { true }
-                    launched.result.onAwait { false }
-                }
-            }
-            if (started != true) {
-                val result = withTimeoutOrNull(RESULT_READ_TIMEOUT_MS) { launched.result.await() }
-                throw IOException((result as? TerminalCommandResult.NotStarted)?.reason ?: "Could not start the visible Terminal package installer")
-            }
-            val result = withTimeoutOrNull(PACKAGE_INSTALL_TIMEOUT_MS) { launched.result.await() }
-                ?: throw IOException("Package installation is still running in the visible Terminal; finish it there before continuing")
-            when (result) {
-                is TerminalCommandResult.Completed -> if (result.exitCode != 0) {
-                    throw IOException("Could not install Proot and libtalloc. Terminal output: ${result.output.takeLast(500)}")
-                }
-                is TerminalCommandResult.NotStarted -> throw IOException(result.reason)
-                is TerminalCommandResult.Running -> throw IOException("Package installation is still running in the visible Terminal")
-            }
-            if (!installer.hasRuntimeDependencies()) {
-                throw IOException("The package manager completed, but Proot or libtalloc is still missing")
-            }
-        } catch (cancelled: CancellationException) {
-            launched.interrupt()
-            throw cancelled
-        }
-    }
-
     companion object {
         const val HOST = OpenCodeRuntimeInstaller.HOST
         const val PORT = OpenCodeRuntimeInstaller.PORT
         const val HEALTH_URL = "http://127.0.0.1:4098/global/health"
-        const val PACKAGE_INSTALL_COMMAND = "pkg update -y && pkg install -y proot libtalloc"
         // Enforce Planning read-only at the tool layer; tools not explicitly allowed stay denied.
         internal const val CHAT_MODE_CONFIG = """{"agent":{"plan":{"permission":{"*":"deny","read":"allow","glob":"allow","grep":"allow","question":"allow","edit":"deny","write":"deny","patch":"deny","bash":"deny","task":"deny","external_directory":"deny"}},"build":{"permission":{"read":"allow","edit":"allow","write":"allow","patch":"allow"}}}}"""
         private const val OWNER_ID = "builtin.opencode.local"
         private const val SESSION_LABEL = "OpenCode Server"
-        private const val PACKAGE_SESSION_LABEL = "OpenCode Runtime Setup"
         private const val SESSION_START_TIMEOUT_MS = 20_000L
         private const val RESULT_READ_TIMEOUT_MS = 1_000L
-        private const val PACKAGE_INSTALL_TIMEOUT_MS = 8 * 60 * 1_000L
         private const val SERVER_START_TIMEOUT_MS = 60_000L
         private const val SERVER_STOP_TIMEOUT_MS = 12_000L
         private const val HEALTH_POLL_INTERVAL_MS = 800L

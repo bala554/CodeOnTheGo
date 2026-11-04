@@ -32,6 +32,39 @@ class OpenCodeRuntimeInstallerTest {
     }
 
     @Test
+    fun `pins the bundled ARM64 Proot dependencies`() {
+        assertThat(OpenCodeBundledDependenciesInstaller.PROOT_SIZE).isEqualTo(84_396L)
+        assertThat(OpenCodeBundledDependenciesInstaller.PROOT_SHA256)
+            .isEqualTo("29b3c942ce36549771d189cdac6edee14ba4636a187afc6d6482eb6b063d8a92")
+        assertThat(OpenCodeBundledDependenciesInstaller.TALLOC_SIZE).isEqualTo(33_132L)
+        assertThat(OpenCodeBundledDependenciesInstaller.TALLOC_SHA256)
+            .isEqualTo("4857a7faab1a179804e07fa9538e8c026387c1b6a05d0bb7bc8deb755eaded8b")
+    }
+
+    @Test
+    fun `requires proot loaders and the versioned talloc library`() {
+        val prefix = temporaryFolder.newFolder("dependency-prefix")
+        assertThat(OpenCodeBundledDependenciesInstaller.hasRuntimeDependencies(prefix)).isFalse()
+
+        listOf(
+            "bin/proot",
+            "libexec/proot/loader",
+            "libexec/proot/loader32",
+            "lib/libtalloc.so.2.4.3",
+            "lib/libtalloc.so.2",
+            "lib/libtalloc.so",
+        ).forEach { relativePath ->
+            File(prefix, relativePath).apply {
+                parentFile?.mkdirs()
+                writeText("test")
+                setExecutable(true, false)
+            }
+        }
+
+        assertThat(OpenCodeBundledDependenciesInstaller.hasRuntimeDependencies(prefix)).isTrue()
+    }
+
+    @Test
     fun `discovers the sole AArch64 ELF without assuming an archive member name`() {
         val archive = archive("vendor/build-output-7" to arm64ElfHeader())
         val payload = temporaryFolder.newFolder("unfamiliar-payload")

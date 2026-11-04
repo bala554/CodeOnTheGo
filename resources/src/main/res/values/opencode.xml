@@ -11,13 +11,13 @@
 		<string name="opencode_local_title">OpenCode Local Runtime</string>
 		<string name="opencode_local_checking">Checking local runtime and server status...</string>
 		<string name="opencode_local_endpoint">Local health check: %1$s. The server is bound to loopback only.</string>
-		<string name="opencode_local_install_guidance">Installation may open a visible Terminal session to prepare required packages. Keep that session visible while it runs.</string>
+		<string name="opencode_local_install_guidance">Install downloads the verified runtime and bundled ARM64 dependencies here; progress appears in this dialog. The visible Terminal opens only when you start the local server.</string>
 		<string name="opencode_local_not_installed">OpenCode %1$s is not installed. Install the verified runtime to this app.</string>
 		<string name="opencode_local_stopped">OpenCode %1$s is installed. The local server is stopped.</string>
 		<string name="opencode_local_starting">Starting OpenCode in the visible CodeOnTheGo Terminal...</string>
 		<string name="opencode_local_stopping">Stopping the OpenCode Terminal session...</string>
 		<string name="opencode_local_installing">Preparing the runtime installation...</string>
-		<string name="opencode_local_download_progress">%1$s download: %2$d%%</string>
+		<string name="opencode_local_download_progress">%1$s: %2$d%%</string>
 		<string name="opencode_local_installed">OpenCode %1$s was installed and verified. The server is stopped.</string>
 		<string name="opencode_local_running_managed">OpenCode %1$s is running locally in a visible CodeOnTheGo Terminal session.</string>
 		<string name="opencode_local_running_unmanaged">OpenCode %1$s responds locally, but this app did not start it. Stop it in Terminal, then start it here to use secured Planning mode.</string>

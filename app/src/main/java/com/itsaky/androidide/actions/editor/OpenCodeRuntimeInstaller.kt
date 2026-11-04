@@ -14,6 +14,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -41,6 +42,9 @@ internal data class OpenCodeInstallation(
 internal class OpenCodeRuntimeInstaller(
     private val prefix: File = Environment.PREFIX,
     private val cacheDirectory: File,
+    private val openDependencyAsset: (String) -> InputStream = {
+        throw IOException("The bundled OpenCode dependency asset is unavailable")
+    },
 ) {
     val isSupportedDevice: Boolean
         get() = Build.SUPPORTED_64_BIT_ABIS.contains(TARGET_ABI)
@@ -48,9 +52,7 @@ internal class OpenCodeRuntimeInstaller(
     fun runtimeDirectory(): File = File(File(prefix, RUNTIME_PATH), VERSION)
 
     fun hasRuntimeDependencies(): Boolean {
-        val proot = File(prefix, "bin/proot")
-        val tallocLibraries = File(prefix, "lib").listFiles().orEmpty()
-        return proot.canExecute() && tallocLibraries.any { it.name.startsWith("libtalloc.so") }
+        return OpenCodeBundledDependenciesInstaller.hasRuntimeDependencies(prefix)
     }
 
     suspend fun installedVersion(): String? = withContext(Dispatchers.IO) {
@@ -77,14 +79,12 @@ internal class OpenCodeRuntimeInstaller(
         onProgress: suspend (OpenCodeInstallProgress) -> Unit = {},
     ): OpenCodeInstallation = withContext(Dispatchers.IO) {
         if (!isSupportedDevice) throw IOException("The OpenCode runtime requires a 64-bit ARM Android device")
-        if (!hasRuntimeDependencies()) {
-            throw IOException("Proot and libtalloc are not installed. Install them from the visible CodeOnTheGo Terminal first.")
-        }
-        installedVersion()?.let {
-            return@withContext OpenCodeInstallation(VERSION, runtimeDirectory(), "OpenCode $VERSION")
-        }
         if (!cacheDirectory.exists() && !cacheDirectory.mkdirs()) {
             throw IOException("Could not create a private download cache")
+        }
+        OpenCodeBundledDependenciesInstaller(prefix, cacheDirectory, openDependencyAsset).installIfNeeded(onProgress)
+        installedVersion()?.let {
+            return@withContext OpenCodeInstallation(VERSION, runtimeDirectory(), "OpenCode $VERSION")
         }
         if (cacheDirectory.usableSpace < MINIMUM_FREE_BYTES || prefix.usableSpace < MINIMUM_FREE_BYTES) {
             throw IOException("At least 512 MiB of free app storage is required to prepare the Debian runtime")

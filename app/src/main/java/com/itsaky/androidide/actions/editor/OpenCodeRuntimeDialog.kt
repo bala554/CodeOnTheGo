@@ -37,11 +37,14 @@ import java.io.File
 internal object OpenCodeRuntimeDialog {
 	fun show(
 		activity: EditorHandlerActivity,
-		projectDirectory: File?,
-		onConnectRemote: () -> Unit,
-	) {
-		val installer = OpenCodeRuntimeInstaller(cacheDirectory = activity.cacheDir)
-		val controller = OpenCodeRuntimeController(installer)
+			projectDirectory: File?,
+			onConnectRemote: () -> Unit,
+		) {
+			val installer = OpenCodeRuntimeInstaller(
+				cacheDirectory = activity.cacheDir,
+				openDependencyAsset = { assetName -> activity.assets.open(assetName) },
+			)
+			val controller = OpenCodeRuntimeController(installer)
 		val padding = (24 * activity.resources.displayMetrics.density).toInt()
 		val spacing = (12 * activity.resources.displayMetrics.density).toInt()
 
@@ -196,7 +199,7 @@ internal object OpenCodeRuntimeDialog {
 			setBusy(activity.getString(StringsR.string.opencode_local_installing))
 			activity.lifecycleScope.launch {
 				try {
-					val installation = controller.install(activity) { update ->
+						val installation = controller.install { update ->
 						withContext(Dispatchers.Main) {
 							if (!dialog.isShowing || activity.isFinishing || activity.isDestroyed) return@withContext
 							progress.isIndeterminate = false

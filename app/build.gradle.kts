@@ -359,6 +359,7 @@ dependencies {
 	implementation(libs.common.charts)
 	implementation(libs.common.hiddenApiBypass)
 	implementation(libs.commons.compress)
+	implementation(libs.tukaani.xz)
 
 	implementation(libs.google.auto.service.annotations)
 	implementation(libs.google.gson)

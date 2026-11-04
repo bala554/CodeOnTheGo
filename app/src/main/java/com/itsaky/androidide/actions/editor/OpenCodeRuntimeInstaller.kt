@@ -241,7 +241,7 @@ internal class OpenCodeRuntimeInstaller(
             } finally {
                 connection.disconnect()
             }
-            currentUrl = redirectedUrl ?: throw IOException("$label download returned an incomplete redirect")
+            currentUrl = redirectedUrl
             redirectCount++
         }
     }

@@ -26,6 +26,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.itsaky.androidide.app.PluginTerminalLauncher
 import com.itsaky.androidide.activities.editor.EditorHandlerActivity
 import com.itsaky.androidide.resources.R as StringsR
 import kotlinx.coroutines.CancellationException
@@ -70,6 +71,7 @@ internal object OpenCodeRuntimeDialog {
 		val stopButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_stop) }
 		val refreshButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_refresh) }
 		val chatButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_chat_open) }
+		val logsButton = Button(activity).apply { text = activity.getString(StringsR.string.opencode_local_logs) }
 
 		val content = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL
@@ -85,6 +87,7 @@ internal object OpenCodeRuntimeDialog {
 			addView(stopButton)
 			addView(refreshButton)
 			addView(chatButton)
+			addView(logsButton)
 		}
 		val dialog = MaterialAlertDialogBuilder(activity)
 			.setTitle(StringsR.string.opencode_local_title)
@@ -104,8 +107,9 @@ internal object OpenCodeRuntimeDialog {
 			installButton.isEnabled = false
 			startButton.isEnabled = false
 			stopButton.isEnabled = false
-			refreshButton.isEnabled = false
-			chatButton.isEnabled = false
+				refreshButton.isEnabled = false
+				chatButton.isEnabled = false
+				logsButton.isEnabled = false
 			dialog.setCancelable(false)
 			dialog.setCanceledOnTouchOutside(false)
 			dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = false
@@ -159,8 +163,9 @@ internal object OpenCodeRuntimeDialog {
 			installButton.isEnabled = controls.canInstall
 			startButton.isEnabled = controls.canStart
 			stopButton.isEnabled = controls.canStop
-			refreshButton.isEnabled = true
-			chatButton.isEnabled = OpenCodeRuntimeDashboardControls.canOpenChat(serverStatus)
+				refreshButton.isEnabled = true
+				chatButton.isEnabled = OpenCodeRuntimeDashboardControls.canOpenChat(serverStatus)
+				logsButton.isEnabled = OpenCodeServerService.logFile(activity).isFile
 		}
 
 		fun inspectStatus() {
@@ -229,14 +234,47 @@ internal object OpenCodeRuntimeDialog {
 		installButton.setOnClickListener { installRuntime() }
 		startButton.setOnClickListener {
 			runServerAction(StringsR.string.opencode_local_starting) {
-				controller.start(activity, projectDirectory)
+				val result = controller.start(activity, projectDirectory)
+				if (OpenCodeRuntimeDashboardControls.canOpenChat(result) &&
+					!activity.isFinishing && !activity.isDestroyed
+				) {
+						dialog.dismiss()
+						OpenCodeChatDialog.show(activity)
+					}
+					result
+				}
 			}
-		}
-		stopButton.setOnClickListener {
-			runServerAction(StringsR.string.opencode_local_stopping) { controller.stop() }
-		}
-		refreshButton.setOnClickListener { inspectStatus() }
-		chatButton.setOnClickListener { OpenCodeChatDialog.show(activity) }
+			stopButton.setOnClickListener {
+				runServerAction(StringsR.string.opencode_local_stopping) { controller.stop(activity) }
+			}
+			refreshButton.setOnClickListener { inspectStatus() }
+			chatButton.setOnClickListener { OpenCodeChatDialog.show(activity) }
+			logsButton.setOnClickListener {
+				val logFile = OpenCodeServerService.logFile(activity)
+				if (!logFile.isFile) {
+					logsButton.isEnabled = false
+					return@setOnClickListener
+				}
+				val quotedLogPath = "'${logFile.absolutePath.replace("'", "'\\''")}'"
+				activity.lifecycleScope.launch {
+					try {
+						PluginTerminalLauncher(foregroundActivity = { activity }).launch(
+							"tail -n 200 -f $quotedLogPath",
+							projectDirectory,
+							"builtin.opencode.local",
+							"OpenCode Server Logs",
+						)
+					} catch (cancelled: CancellationException) {
+						throw cancelled
+					} catch (error: Exception) {
+						message.text = activity.getString(
+							StringsR.string.opencode_local_error,
+							error.message ?: error.javaClass.simpleName,
+						)
+						message.visibility = View.VISIBLE
+					}
+				}
+			}
 		dialog.setOnShowListener {
 			dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
 				dialog.dismiss()

@@ -1,19 +1,14 @@
 package com.itsaky.androidide.actions.editor
 
 import android.app.Activity
-import com.itsaky.androidide.app.PluginTerminalLauncher
-import com.itsaky.androidide.plugins.manager.services.LaunchedTerminalCommand
-import com.itsaky.androidide.plugins.manager.services.TerminalSessionLauncher
-import com.itsaky.androidide.plugins.services.TerminalCommandResult
+import android.content.Context
 import com.itsaky.androidide.utils.Environment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -30,12 +25,30 @@ internal sealed interface OpenCodeServerStatus {
     data class Failed(val message: String) : OpenCodeServerStatus
 }
 
-/** Installs the runtime inside the app, then keeps the local server in a user-visible Terminal session. */
+internal interface OpenCodeServerHost {
+    fun start(context: Context, command: String)
+    fun stop(context: Context)
+    fun isManagedActive(): Boolean
+    fun isStartingOrRunning(): Boolean
+    fun lastFailureMessage(): String?
+}
+
+private object AndroidOpenCodeServerHost : OpenCodeServerHost {
+    override fun start(context: Context, command: String) = OpenCodeServerService.start(context, command)
+
+    override fun stop(context: Context) = OpenCodeServerService.stop(context)
+
+    override fun isManagedActive(): Boolean = OpenCodeServerService.isManagedActive()
+
+    override fun isStartingOrRunning(): Boolean = OpenCodeServerService.isStartingOrRunning()
+
+    override fun lastFailureMessage(): String? = OpenCodeServerService.lastFailureMessage()
+}
+
+/** Installs the runtime in the app sandbox and starts its local server in a persistent foreground service. */
 internal class OpenCodeRuntimeController(
     private val installer: OpenCodeRuntimeInstaller,
-    private val launcherFactory: (Activity) -> TerminalSessionLauncher = { activity ->
-        PluginTerminalLauncher(foregroundActivity = { activity })
-    },
+    private val serverHost: OpenCodeServerHost = AndroidOpenCodeServerHost,
     private val healthProbe: suspend () -> String? = { readHealthVersion() },
 ) {
     suspend fun status(): OpenCodeServerStatus {
@@ -43,21 +56,20 @@ internal class OpenCodeRuntimeController(
             return OpenCodeServerStatus.Failed("The OpenCode runtime requires a 64-bit ARM Android device")
         }
         val installedVersion = installer.installedVersion() ?: return OpenCodeServerStatus.NotInstalled
-        val serverVersion = healthProbe() ?: return if (OpenCodeTerminalSession.command?.result?.isCompleted == false) {
+        val serverVersion = healthProbe() ?: return if (serverHost.isStartingOrRunning()) {
             OpenCodeServerStatus.Starting
         } else {
             OpenCodeServerStatus.Stopped
         }
         if (serverVersion != OpenCodeRuntimeInstaller.VERSION) return OpenCodeServerStatus.VersionConflict(serverVersion)
-        val managed = OpenCodeTerminalSession.command?.snapshot() != null
-        return OpenCodeServerStatus.Running(installedVersion, managed)
+        return OpenCodeServerStatus.Running(installedVersion, serverHost.isManagedActive())
     }
 
     suspend fun install(
         onProgress: suspend (OpenCodeInstallProgress) -> Unit = {},
-    ): OpenCodeInstallation = OpenCodeTerminalSession.mutex.withLock {
+    ): OpenCodeInstallation = OpenCodeServerSession.mutex.withLock {
         if (!installer.isSupportedDevice) throw IOException("The OpenCode runtime requires a 64-bit ARM Android device")
-        if (OpenCodeTerminalSession.command?.result?.isCompleted == false || healthProbe() != null) {
+        if (serverHost.isStartingOrRunning() || healthProbe() != null) {
             throw IOException("Stop the local OpenCode server before reinstalling its runtime")
         }
         installer.install(onProgress)
@@ -66,7 +78,7 @@ internal class OpenCodeRuntimeController(
     suspend fun start(
         activity: Activity,
         projectDirectory: File?,
-    ): OpenCodeServerStatus = OpenCodeTerminalSession.mutex.withLock {
+    ): OpenCodeServerStatus = OpenCodeServerSession.mutex.withLock {
         if (!installer.isSupportedDevice) {
             return OpenCodeServerStatus.Failed("The OpenCode runtime requires a 64-bit ARM Android device")
         }
@@ -74,14 +86,12 @@ internal class OpenCodeRuntimeController(
         val activeVersion = healthProbe()
         if (activeVersion != null) {
             return if (activeVersion == OpenCodeRuntimeInstaller.VERSION) {
-                OpenCodeServerStatus.Running(version, OpenCodeTerminalSession.command?.snapshot() != null)
+                OpenCodeServerStatus.Running(version, serverHost.isManagedActive())
             } else {
                 OpenCodeServerStatus.VersionConflict(activeVersion)
             }
         }
-        val previous = OpenCodeTerminalSession.command
-        if (previous?.result?.isCompleted == true) OpenCodeTerminalSession.command = null
-        if (previous?.result?.isCompleted == false) return OpenCodeServerStatus.Starting
+        if (serverHost.isStartingOrRunning()) return OpenCodeServerStatus.Starting
         if (projectDirectory != null && !projectDirectory.isDirectory) {
             return OpenCodeServerStatus.Failed("The selected project directory does not exist")
         }
@@ -92,83 +102,64 @@ internal class OpenCodeRuntimeController(
         } catch (error: Exception) {
             return OpenCodeServerStatus.Failed(error.message ?: "Could not prepare the Proot launch command")
         }
-        val launched = try {
-            launcherFactory(activity).launch(command, projectDirectory, OWNER_ID, SESSION_LABEL)
+        try {
+            serverHost.start(activity, command)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            return OpenCodeServerStatus.Failed(error.message ?: "Could not open the CodeOnTheGo Terminal")
+            return OpenCodeServerStatus.Failed(error.message ?: "Could not start the OpenCode service")
         }
-        OpenCodeTerminalSession.command = launched
-        val started = withTimeoutOrNull(SESSION_START_TIMEOUT_MS) {
-            select<Boolean> {
-                launched.started.onAwait { true }
-                launched.result.onAwait { false }
-            }
-        }
-        if (started != true) {
-            val result = withTimeoutOrNull(RESULT_READ_TIMEOUT_MS) { launched.result.await() }
-            if (result == null) {
-                launched.interrupt()
-                return OpenCodeServerStatus.Failed("The visible Terminal session did not start")
-            }
-            OpenCodeTerminalSession.command = null
-            return OpenCodeServerStatus.Failed((result as? TerminalCommandResult.NotStarted)?.reason ?: "The visible Terminal session did not start OpenCode")
-        }
+
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SERVER_START_TIMEOUT_MS)
         while (System.nanoTime() < deadline) {
             val healthVersion = healthProbe()
             if (healthVersion != null) {
                 return if (healthVersion == OpenCodeRuntimeInstaller.VERSION) {
-                    OpenCodeServerStatus.Running(version, managedByThisApp = true)
+                    OpenCodeServerStatus.Running(version, managedByThisApp = serverHost.isManagedActive())
                 } else {
                     OpenCodeServerStatus.VersionConflict(healthVersion)
                 }
             }
-            if (launched.result.isCompleted) {
-                OpenCodeTerminalSession.command = null
-                val result = runCatching { launched.result.await() }.getOrNull()
-                val output = (result as? TerminalCommandResult.Completed)?.output.orEmpty().takeLast(400).trim()
-                return OpenCodeServerStatus.Failed(output.ifBlank { "OpenCode exited before its local server became healthy" })
+            if (!serverHost.isStartingOrRunning()) {
+                return OpenCodeServerStatus.Failed(
+                    serverHost.lastFailureMessage() ?: "OpenCode exited before its local server became healthy",
+                )
             }
             delay(HEALTH_POLL_INTERVAL_MS)
         }
         OpenCodeServerStatus.Starting
     }
 
-    suspend fun stop(): OpenCodeServerStatus = OpenCodeTerminalSession.mutex.withLock {
+    suspend fun stop(activity: Activity): OpenCodeServerStatus = OpenCodeServerSession.mutex.withLock {
         val serverVersion = healthProbe()
-        val command = OpenCodeTerminalSession.command
-        if (serverVersion == null) {
-            if (command == null || command.result.isCompleted) {
-                OpenCodeTerminalSession.command = null
-                return OpenCodeServerStatus.Stopped
-            }
-            command.interrupt()
-            val result = withTimeoutOrNull(SERVER_STOP_TIMEOUT_MS) { command.result.await() }
-            if (result != null) {
-                OpenCodeTerminalSession.command = null
-                return OpenCodeServerStatus.Stopped
-            }
-            return OpenCodeServerStatus.Starting
+        if (serverVersion != null && serverVersion != OpenCodeRuntimeInstaller.VERSION) {
+            return OpenCodeServerStatus.VersionConflict(serverVersion)
         }
-        if (serverVersion != OpenCodeRuntimeInstaller.VERSION) return OpenCodeServerStatus.VersionConflict(serverVersion)
-        if (command == null || command.snapshot() == null) return OpenCodeServerStatus.Running(serverVersion, managedByThisApp = false)
-        command.interrupt()
+        if (!serverHost.isStartingOrRunning()) {
+            return if (serverVersion == null) {
+                OpenCodeServerStatus.Stopped
+            } else {
+                OpenCodeServerStatus.Running(serverVersion, managedByThisApp = false)
+            }
+        }
+        serverHost.stop(activity)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SERVER_STOP_TIMEOUT_MS)
         while (System.nanoTime() < deadline) {
-            if (healthProbe() == null) {
-                OpenCodeTerminalSession.command = null
+            val currentVersion = healthProbe()
+            if (currentVersion != null && currentVersion != OpenCodeRuntimeInstaller.VERSION) {
+                return OpenCodeServerStatus.VersionConflict(currentVersion)
+            }
+            if (currentVersion == null && !serverHost.isStartingOrRunning()) {
                 return OpenCodeServerStatus.Stopped
             }
             delay(HEALTH_POLL_INTERVAL_MS)
         }
         val remaining = healthProbe()
-        if (remaining == null) {
-            OpenCodeTerminalSession.command = null
-            OpenCodeServerStatus.Stopped
-        } else {
-            OpenCodeServerStatus.Running(remaining, OpenCodeTerminalSession.command?.snapshot() != null)
+        when {
+            remaining == null && !serverHost.isStartingOrRunning() -> OpenCodeServerStatus.Stopped
+            remaining != null && remaining != OpenCodeRuntimeInstaller.VERSION -> OpenCodeServerStatus.VersionConflict(remaining)
+            remaining != null -> OpenCodeServerStatus.Running(remaining, serverHost.isManagedActive())
+            else -> OpenCodeServerStatus.Starting
         }
     }
 
@@ -176,12 +167,10 @@ internal class OpenCodeRuntimeController(
         const val HOST = OpenCodeRuntimeInstaller.HOST
         const val PORT = OpenCodeRuntimeInstaller.PORT
         const val HEALTH_URL = "http://127.0.0.1:4098/global/health"
+
         // Enforce Planning read-only at the tool layer; tools not explicitly allowed stay denied.
         internal const val CHAT_MODE_CONFIG = """{"agent":{"plan":{"permission":{"*":"deny","read":"allow","glob":"allow","grep":"allow","question":"allow","edit":"deny","write":"deny","patch":"deny","bash":"deny","task":"deny","external_directory":"deny"}},"build":{"permission":{"read":"allow","edit":"allow","write":"allow","patch":"allow"}}}}"""
-        private const val OWNER_ID = "builtin.opencode.local"
-        private const val SESSION_LABEL = "OpenCode Server"
-        private const val SESSION_START_TIMEOUT_MS = 20_000L
-        private const val RESULT_READ_TIMEOUT_MS = 1_000L
+
         private const val SERVER_START_TIMEOUT_MS = 60_000L
         private const val SERVER_STOP_TIMEOUT_MS = 12_000L
         private const val HEALTH_POLL_INTERVAL_MS = 800L
@@ -247,10 +236,6 @@ internal class OpenCodeRuntimeController(
     }
 }
 
-/** Tracks only the command started by this controller, never an arbitrary process or PID. */
-private object OpenCodeTerminalSession {
+private object OpenCodeServerSession {
     val mutex = Mutex()
-
-    @Volatile
-    var command: LaunchedTerminalCommand? = null
 }

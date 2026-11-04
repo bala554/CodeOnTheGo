@@ -36,6 +36,7 @@
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
@@ -385,6 +386,15 @@
         <service
             android:name=".services.debug.DebuggerService"
             android:exported="false" />
+
+        <service
+            android:name=".actions.editor.OpenCodeServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the user's local OpenCode server running while they use in-app chat." />
+        </service>
 
         <service
             android:name=".services.log.LogReceiverService"

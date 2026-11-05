@@ -35,36 +35,51 @@ class OpenCodeRuntimeInstallerTest {
     }
 
     @Test
-    fun `allows only the exact HTTPS Docker blob redirect host`() {
+    fun `allows signed HTTPS redirects for the pinned blob from regional Docker S3`() {
         val trustedHosts = OpenCodeRuntimeInstaller.DEBIAN_DOWNLOAD_HOSTS
+        val blobPath = "/registry-v2/docker/registry/v2/blobs/sha256/" +
+            "${OpenCodeRuntimeInstaller.DEBIAN_LAYER_SHA256.take(2)}/" +
+            "${OpenCodeRuntimeInstaller.DEBIAN_LAYER_SHA256}/data"
+        val signature = "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test&X-Amz-Signature=test"
+
+        listOf(
+            "docker-images-prod.s3.dualstack.us-east-1.amazonaws.com",
+            "docker-images-prod.s3.dualstack.af-south-1.amazonaws.com",
+            "docker-images-prod.s3.eu-west-1.amazonaws.com",
+        ).forEach { host ->
+            assertThat(
+                OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
+                    URL("https://$host$blobPath?$signature"),
+                    trustedHosts,
+                ),
+            ).isTrue()
+        }
+    }
+
+    @Test
+    fun `rejects unsigned forged or unrelated regional S3 redirects`() {
+        val trustedHosts = OpenCodeRuntimeInstaller.DEBIAN_DOWNLOAD_HOSTS
+        val blobPath = "/registry-v2/docker/registry/v2/blobs/sha256/" +
+            "${OpenCodeRuntimeInstaller.DEBIAN_LAYER_SHA256.take(2)}/" +
+            "${OpenCodeRuntimeInstaller.DEBIAN_LAYER_SHA256}/data"
+        val signature = "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test&X-Amz-Signature=test"
+        val trustedUrl = "docker-images-prod.s3.dualstack.af-south-1.amazonaws.com$blobPath?$signature"
+
+        listOf(
+            URL("https://$trustedUrl".replace("docker-images-prod", "other-images-prod")),
+            URL("https://docker-images-prod.s3.dualstack.af-south-1.amazonaws.com.evil.example$blobPath?$signature"),
+            URL("https://$trustedUrl".replace(blobPath, "/unrelated/blob")),
+            URL("https://docker-images-prod.s3.dualstack.af-south-1.amazonaws.com$blobPath"),
+            URL("http://$trustedUrl"),
+            URL("https://$trustedUrl".replace(".amazonaws.com", ".amazonaws.com:444")),
+            URL("https://user@$trustedUrl"),
+        ).forEach { url ->
+            assertThat(OpenCodeRuntimeInstaller.isAllowedDownloadUrl(url, trustedHosts)).isFalse()
+        }
 
         assertThat(
             OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
-                URL("https://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
-                trustedHosts,
-            ),
-        ).isTrue()
-        assertThat(
-            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
-                URL("https://s3.dualstack.us-east-1.amazonaws.com/blob"),
-                trustedHosts,
-            ),
-        ).isFalse()
-        assertThat(
-            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
-                URL("http://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
-                trustedHosts,
-            ),
-        ).isFalse()
-        assertThat(
-            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
-                URL("https://docker-images-prod.s3.dualstack.us-east-1.amazonaws.com:444/blob"),
-                trustedHosts,
-            ),
-        ).isFalse()
-        assertThat(
-            OpenCodeRuntimeInstaller.isAllowedDownloadUrl(
-                URL("https://user@docker-images-prod.s3.dualstack.us-east-1.amazonaws.com/blob"),
+                URL("https://s3.dualstack.us-east-1.amazonaws.com$blobPath?$signature"),
                 trustedHosts,
             ),
         ).isFalse()

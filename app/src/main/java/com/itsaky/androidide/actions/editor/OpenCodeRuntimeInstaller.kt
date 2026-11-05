@@ -438,19 +438,47 @@ internal class OpenCodeRuntimeInstaller(
             "release-assets.githubusercontent.com",
             "objects.githubusercontent.com",
         )
+        private val DOCKER_PRODUCTION_S3_HOST =
+            Regex("docker-images-prod\\.s3(?:\\.dualstack)?\\.[a-z]{2}(?:-[a-z0-9]+)+-[0-9]+\\.amazonaws\\.com")
+        private val DEBIAN_BLOB_PATH =
+            "/registry-v2/docker/registry/v2/blobs/sha256/${DEBIAN_LAYER_SHA256.take(2)}/$DEBIAN_LAYER_SHA256/data"
+        private val DOCKER_S3_SIGNATURE_QUERY_KEYS = setOf(
+            "x-amz-algorithm",
+            "x-amz-credential",
+            "x-amz-signature",
+        )
         internal val DEBIAN_DOWNLOAD_HOSTS = setOf(
             "registry-1.docker.io",
             "production.cloudflare.docker.com",
-            "docker-images-prod.s3.dualstack.us-east-1.amazonaws.com",
         )
 
         internal fun isAllowedDownloadUrl(url: URL, allowedHosts: Set<String>): Boolean {
             val uri = runCatching { url.toURI() }.getOrNull() ?: return false
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+            val isPinnedDockerS3Blob = "registry-1.docker.io" in allowedHosts &&
+                DOCKER_PRODUCTION_S3_HOST.matches(host) &&
+                uri.rawPath == DEBIAN_BLOB_PATH &&
+                hasDockerS3Signature(uri)
             return uri.scheme.equals("https", ignoreCase = true) &&
-                host in allowedHosts &&
+                (host in allowedHosts || isPinnedDockerS3Blob) &&
                 (uri.port == -1 || uri.port == 443) &&
                 uri.rawUserInfo == null
+        }
+
+        private fun hasDockerS3Signature(uri: java.net.URI): Boolean {
+            val queryParameters = uri.rawQuery.orEmpty().split('&').mapNotNull { parameter ->
+                val separator = parameter.indexOf('=')
+                if (separator <= 0) {
+                    null
+                } else {
+                    parameter.substring(0, separator).lowercase(Locale.ROOT) to
+                        parameter.substring(separator + 1).lowercase(Locale.ROOT)
+                }
+            }.toMap()
+            return queryParameters["x-amz-algorithm"] == "aws4-hmac-sha256" &&
+                DOCKER_S3_SIGNATURE_QUERY_KEYS
+                    .filterNot { it == "x-amz-algorithm" }
+                    .all { !queryParameters[it].isNullOrBlank() }
         }
 
         internal fun headersForRedirect(
